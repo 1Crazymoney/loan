@@ -160,8 +160,8 @@ contract Loan is ILoan, BasicFundsTokenFDT, Pausable {
 
         address treasury = globals.mapleTreasury();
 
-        uint256 _feePaid = feePaid = amt.mul(investorFee).div(10_000);  // Update fees paid for `claim()`.
-        uint256 treasuryAmt        = amt.mul(treasuryFee).div(10_000);  // Calculate amount to send to the MapleTreasury.
+        uint256 _feePaid = feePaid = amt.mul(investorFee).mul(termDays).div(3_650_000);  // Update fees paid for `claim()`.
+        uint256 treasuryAmt        = amt.mul(treasuryFee).mul(termDays).div(3_650_000);  // Calculate amount to send to the MapleTreasury.
 
         _transferFunds(_fundingLocker, treasury, treasuryAmt);                         // Send the treasury fee directly to the MapleTreasury.
         _transferFunds(_fundingLocker, borrower, amt.sub(treasuryAmt).sub(_feePaid));  // Transfer drawdown amount to the Borrower.

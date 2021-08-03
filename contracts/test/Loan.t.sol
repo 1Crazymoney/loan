@@ -159,3 +159,83 @@ contract LoanConstructorTest is TestUtils {
     // TODO: test failure creating a loan with various invalid specs
 
 }
+
+contract LoanTestDrawDown is TestUtils {
+
+    uint8 internal constant CL_FACTORY = 0;
+    uint8 internal constant FL_FACTORY = 2;
+
+    uint8 internal constant INTEREST_CALC_TYPE = 10;
+    uint8 internal constant LATEFEE_CALC_TYPE  = 11;
+    uint8 internal constant PREMIUM_CALC_TYPE  = 12;
+
+    Borrower      internal borrower;
+    GlobalsMock   internal globals;
+    LoanFactory   internal loanFactory;
+    MintableToken internal token;
+
+    address internal collateralLockerFactory;
+    address internal fundingLockerFactory;
+
+    address internal constant repaymentCalc = address(111);
+    address internal constant lateFeeCalc   = address(222);
+    address internal constant premiumCalc   = address(333);
+
+    function setUp() external {
+        borrower    = new Borrower();
+        globals     = new GlobalsMock(address(this));
+        loanFactory = new LoanFactory(address(globals));
+        token       = new MintableToken("Test", "TST");
+
+        collateralLockerFactory = address(new CollateralLockerFactoryMock());
+        fundingLockerFactory    = address(new FundingLockerFactoryMock());
+
+        globals.setCalcValidity(repaymentCalc, INTEREST_CALC_TYPE, true);
+        globals.setCalcValidity(lateFeeCalc,   LATEFEE_CALC_TYPE,  true);
+        globals.setCalcValidity(premiumCalc,   PREMIUM_CALC_TYPE,  true);
+    }
+
+    function test_annualizedDrawdownFees() external {
+        uint256 apr                 = 0;
+        uint256 collateralRatio     = 10_000;
+        uint256 paymentIntervalDays = 1;
+        uint256 requestAmount       = 10_000_000;
+        uint256 termDays            = 10;
+
+        globals.setLiquidityAssetValidity(address(token), true);
+        globals.setCollateralAssetValidity(address(token), true);
+
+        globals.setSubFactoryValidity(address(loanFactory), address(fundingLockerFactory),    FL_FACTORY, true);
+        globals.setSubFactoryValidity(address(loanFactory), address(collateralLockerFactory), CL_FACTORY, true);
+
+        uint256[5] memory specs = [apr, termDays, paymentIntervalDays, requestAmount, collateralRatio];
+
+        address loan = borrower.loanFactory_createLoan(
+            address(loanFactory),
+            address(token),
+            address(token),
+            fundingLockerFactory,
+            collateralLockerFactory,
+            specs,
+            [repaymentCalc, lateFeeCalc, premiumCalc]
+        );
+
+        // Funding Locker needs to have enough to draw down on
+        token.mint(Loan(loan).fundingLocker(), requestAmount);
+
+        // Borrower needs collateral approve for the loan
+        token.mint(address(borrower), requestAmount);
+        borrower.erc20_approve(address(token), loan, requestAmount);
+
+        // Mock the price of the token, the set investor fee (2%), and the treasury fee (1%)
+        globals.setLatestPrice(address(token), 100);
+        globals.setInvestorFee(200);
+        globals.setTreasuryFee(100);
+
+        borrower.loan_drawdown(loan, requestAmount);
+
+        assertEq(Loan(loan).feePaid(),                     5479);
+        assertEq(token.balanceOf(globals.mapleTreasury()), 2739);
+    }
+
+}

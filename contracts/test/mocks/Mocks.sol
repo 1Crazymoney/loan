@@ -61,6 +61,9 @@ contract FundingLockerMock {
         liquidityAsset.safeTransfer(dst, amt);
     }
 
+    function drain() external {
+    }
+
 }
 
 /***************/
