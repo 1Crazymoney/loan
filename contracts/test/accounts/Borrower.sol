@@ -1,43 +1,34 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-pragma solidity 0.6.11;
+pragma solidity ^0.8.7;
 
-import { ILoanFactory } from "../../interfaces/ILoanFactory.sol"; 
+import { ILoan } from "../../interfaces/ILoan.sol";
 
-contract Borrower {
+import { LoanUser } from "./LoanUser.sol";
+
+contract Borrower is LoanUser {
 
     /************************/
     /*** Direct Functions ***/
     /************************/
-    function loanFactory_createLoan(
-        address loanFactory,
-        address liquidityAsset,
-        address collateralAsset,
-        address flFactory,
-        address clFactory,
-        uint256[5] memory specs,
-        address[3] memory calcs
-    ) external {
-        ILoanFactory(loanFactory).createLoan(liquidityAsset, collateralAsset, flFactory, clFactory, specs, calcs); 
+
+    function loan_drawdownFunds(address loan, uint256 amount, address destination) external {
+        ILoan(loan).drawdownFunds(amount, destination);
+    }
+
+    function loan_removeCollateral(address loan, uint256 amount, address destination) external {
+        ILoan(loan).removeCollateral(amount, destination);
     }
 
     /*********************/
     /*** Try Functions ***/
     /*********************/
-    function try_loanFactory_createLoan(
-        address loanFactory,
-        address liquidityAsset,
-        address collateralAsset,
-        address flFactory,
-        address clFactory,
-        uint256[5] memory specs,
-        address[3] memory calcs
-    ) 
-        external returns (bool ok) 
-    {
-        string memory sig = "createLoan(address,address,address,address,uint256[5],address[3])";
-        (ok,) = loanFactory.call(
-            abi.encodeWithSignature(sig, liquidityAsset, collateralAsset, flFactory, clFactory, specs, calcs)
-        );
+
+    function try_loan_drawdownFunds(address loan, uint256 amount, address destination) external returns (bool ok) {
+        (ok,) = loan.call(abi.encodeWithSelector(ILoan.drawdownFunds.selector, amount, destination));
+    }
+
+    function try_loan_removeCollateral(address loan, uint256 amount, address destination) external returns (bool ok) {
+        (ok,) = loan.call(abi.encodeWithSelector(ILoan.removeCollateral.selector, amount, destination));
     }
 
 }

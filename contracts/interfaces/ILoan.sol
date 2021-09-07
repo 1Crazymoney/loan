@@ -1,352 +1,266 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-pragma solidity 0.6.11;
+pragma solidity ^0.8.7;
 
 interface ILoan {
 
-    /**
-        Ready      = The Loan has been initialized and is ready for funding (assuming funding period hasn't ended).
-        Active     = The Loan has been drawdown and the Borrower is making payments.
-        Matured    = The Loan is fully paid off and has "matured".
-        Expired    = The Loan did not initiate, and all funding was returned to Lenders.
-        Liquidated = The Loan has been liquidated.
-     */
-    enum State { Ready, Active, Matured, Expired, Liquidated }
+    /**************/
+    /*** Events ***/
+    /**************/
 
     /**
-        @dev   Emits an event indicating the Loan was funded.
-        @param fundedBy     The Pool that funded the Loan.
-        @param amountFunded The amount the Loan was funded for.
+     *  @dev   Collateral was posted.
+     *  @param amount The amount of collateral posted.
      */
-    event LoanFunded(address indexed fundedBy, uint256 amountFunded);
+    event CollateralPosted(uint256 amount);
 
     /**
-        @dev   Emits an event indicating the balance for an account was updated.
-        @param account The address of an account.
-        @param token   The token address of the asset.
-        @param balance The new balance of `token` for `account`.
+     *  @dev   Collateral was removed.
+     *  @param amount The amount of collateral removed.
      */
-    event BalanceUpdated(address indexed account, address indexed token, uint256 balance);
+    event CollateralRemoved(uint256 amount);
 
     /**
-        @dev   Emits an event indicating the some loaned amount was drawn down.
-        @param drawdownAmount The amount that was drawn down.
+     *  @dev   The loan was funded.
+     *  @param lender             The address of the lender.
+     *  @param nextPaymentDueDate The due date of the next payment.
      */
-    event Drawdown(uint256 drawdownAmount);
+    event Funded(address indexed lender, uint256 nextPaymentDueDate);
 
     /**
-        @dev   Emits an event indicating the state of the Loan changed.
-        @param state The state of the Loan.
+     *  @dev   Funds were claimed.
+     *  @param amount The amount of funds claimed.
      */
-    event LoanStateChanged(State state);
+    event FundsClaimed(uint256 amount);
 
     /**
-        @dev   Emits an event indicating the an Admin for the Loan was set.
-        @param loanAdmin The address of some Loan Admin.
-        @param allowed   Whether `loanAdmin` is a Loan Admin for this Loan.
+     *  @dev   Funds were drawn.
+     *  @param amount The amount of funds drawn.
      */
-    event LoanAdminSet(address indexed loanAdmin, bool allowed);
+    event FundsDrawnDown(uint256 amount);
 
     /**
-        @dev   Emits an event indicating the a payment was made for the Loan.
-        @param totalPaid         The total amount paid.
-        @param principalPaid     The principal portion of the amount paid.
-        @param interestPaid      The interest portion of the amount paid.
-        @param paymentsRemaining The amount of payment remaining.
-        @param principalOwed     The outstanding principal of the Loan.
-        @param nextPaymentDue    The timestamp of the due date of the next payment.
-        @param latePayment       Whether this payment was late.
+     *  @dev   Funds were returned.
+     *  @param amount The amount of funds returned.
      */
-    event PaymentMade(
-        uint256 totalPaid,
-        uint256 principalPaid,
-        uint256 interestPaid,
-        uint256 paymentsRemaining,
-        uint256 principalOwed,
-        uint256 nextPaymentDue,
-        bool latePayment
-    );
+    event FundsReturned(uint256 amount);
 
     /**
-        @dev   Emits an event indicating the the Loan was liquidated.
-        @param collateralSwapped      The amount of Collateral Asset swapped.
-        @param liquidityAssetReturned The amount of Liquidity Asset recovered from swap.
-        @param liquidationExcess      The amount of Liquidity Asset returned to borrower.
-        @param defaultSuffered        The remaining losses after the liquidation.
+     *  @dev   The loan was initialized.
+     *  @param _borrower   The address of the borrower.
+     *  @param _assets     Array of asset addresses. 
+     *                       [0]: collateralAsset, 
+     *                       [1]: fundsAsset.
+     *  @param _parameters Array of loan parameters: 
+     *                       [0]: endingPrincipal, 
+     *                       [1]: gracePeriod, 
+     *                       [2]: interestRate, 
+     *                       [3]: lateFeeRate, 
+     *                       [4]: paymentInterval, 
+     *                       [5]: paymentsRemaining.
+     *  @param _requests   Requested amounts: 
+     *                       [0]: collateralRequired, 
+     *                       [1]: principalRequired.
      */
-    event Liquidation(
-        uint256 collateralSwapped,
-        uint256 liquidityAssetReturned,
-        uint256 liquidationExcess,
-        uint256 defaultSuffered
-    );
+    event Initialized(address indexed _borrower, address[2] _assets, uint256[6] _parameters, uint256[2] _requests);
 
     /**
-        @dev The current state of this Loan, as defined in the State enum below.
+     *  @dev   Payments were made.
+     *  @param numberOfPayments The number of payment installments made.
+     *  @param principalPaid    The portion of the total amount that went towards principal.
+     *  @param interestPaid     The portion of the total amount that went towards interest fees.
+     *  @param lateFeesPaid     The portion of the total amount that went towards late fees.
      */
-    function loanState() external view returns (State);
+    event PaymentsMade(uint256 numberOfPayments, uint256 principalPaid, uint256 interestPaid, uint256 lateFeesPaid);
 
     /**
-        @dev The asset deposited by Lenders into the FundingLocker, when funding this Loan.
+     *  @dev   The loan was in default and funds and collateral was repossessed by the lender.
+     *  @param collateralAssetAmount The amount of collateral asset repossessed.
+     *  @param fundsAssetAmount      The amount of funds asset repossessed.
      */
-    function liquidityAsset() external view returns (address);
+    event Repossessed(uint256 collateralAssetAmount, uint256 fundsAssetAmount);
 
     /**
-        @dev The asset deposited by Borrower into the CollateralLocker, for collateralizing this Loan.
+     *  @dev   Additional/unallocated asset was skimmed.
+     *  @param asset       The address of the asset.
+     *  @param destination The address where the asset was send.
+     *  @param amount      The amount of the asset that was skimmed.
      */
-    function collateralAsset() external view returns (address);
+    event Skimmed(address asset, address destination, uint256 amount);
+
+    /***********************/
+    /*** State Variables ***/
+    /***********************/
 
     /**
-        @dev The FundingLocker that holds custody of Loan funds before drawdown.
-     */
-    function fundingLocker() external view returns (address);
-
-    /**
-        @dev The FundingLockerFactory.
-     */
-    function flFactory() external view returns (address);
-
-    /**
-        @dev The CollateralLocker that holds custody of Loan collateral.
-     */
-    function collateralLocker() external view returns (address);
-
-    /**
-        @dev The CollateralLockerFactory.
-     */
-    function clFactory() external view returns (address);
-
-    /**
-        @dev The Borrower of this Loan, responsible for repayments.
+     *  @dev The borrower of the loan, responsible for repayments.
      */
     function borrower() external view returns (address);
 
     /**
-        @dev The RepaymentCalc for this Loan.
+     *  @dev The amount of funds that have yet to be claimed by the lender.
      */
-    function repaymentCalc() external view returns (address);
+    function claimableFunds() external view returns (uint256);
 
     /**
-        @dev The LateFeeCalc for this Loan.
+     *  @dev The amount of collateral posted against outstanding (drawn down) principal.
      */
-    function lateFeeCalc() external view returns (address);
+    function collateral() external view returns (uint256);
 
     /**
-        @dev The PremiumCalc for this Loan.
+     *  @dev The address of the asset deposited by the borrower as collateral, if needed.
      */
-    function premiumCalc() external view returns (address);
+    function collateralAsset() external view returns (address);
 
     /**
-        @dev The LoanFactory that deployed this Loan.
+     *  @dev The amount of collateral required if all of the principal required is drawn down.
      */
-    function superFactory() external view returns (address);
+    function collateralRequired() external view returns (uint256);
 
     /**
-        @param  loanAdmin The address of some admin.
-        @return Whether the `loanAdmin` has permission to do certain operations in case of disaster management.
+     *  @dev The amount of funds that have yet to be drawn down by the borrower.
      */
-    function loanAdmins(address loanAdmin) external view returns (bool);
+    function drawableFunds() external view returns (uint256);
 
     /**
-        @dev The unix timestamp due date of the next payment.
+     *  @dev The portion of principal to not be paid down as part of payment installments, which would need to be paid back upon final payment. 
+     *  @dev If endingPrincipal = principal, loan is interest-only.
      */
-    function nextPaymentDue() external view returns (uint256);
+    function endingPrincipal() external view returns (uint256);
 
     /**
-        @dev The APR in basis points.
+     *  @dev The asset deposited by the lender to fund the loan.
      */
-    function apr() external view returns (uint256);
+    function fundsAsset() external view returns (address);
 
     /**
-        @dev The number of payments remaining on the Loan.
+     *  @dev The amount of time the borrower has, after a payment is due, to make a payment before being in default.
+     */
+    function gracePeriod() external view returns (uint256);
+
+    /**
+     *  @dev The annualized interest rate (APR), in basis points, scaled by 100 (i.e. 1% is 10_000).
+     */
+    function interestRate() external view returns (uint256);
+
+    /**
+     *  @dev The annualized fee rate charged on interest for late payments, in basis points, scaled by 100 (i.e. 1% is 10_000).
+     */
+    function lateFeeRate() external view returns (uint256);
+
+    /**
+     *  @dev The lender of the Loan.
+     */
+    function lender() external view returns (address);
+
+    /**
+     *  @dev The timestamp due date of the next payment.
+     */
+    function nextPaymentDueDate() external view returns (uint256);
+
+    /**
+     *  @dev The specified time between loan payments.
+     */
+    function paymentInterval() external view returns (uint256);
+
+    /**
+     *  @dev The number of payment installments remaining for the loan.
      */
     function paymentsRemaining() external view returns (uint256);
 
     /**
-        @dev The total length of the Loan term in days.
+     *  @dev The amount of principal owed (initially, the requested amount), which needs to be paid back.
      */
-    function termDays() external view returns (uint256);
+    function principal() external view returns (uint256);
 
     /**
-        @dev The time between Loan payments in seconds.
+     *  @dev The initial principal amount requested by the borrower.
      */
-    function paymentIntervalSeconds() external view returns (uint256);
+    function principalRequired() external view returns (uint256);
+
+    /********************************/
+    /*** State Changing Functions ***/
+    /********************************/
 
     /**
-        @dev The total requested amount for Loan.
+     *  @dev   Claim funds that have been paid (principal, interest, and late fees).
+     *  @param _amount      The amount to be claimed.
+     *  @param _destination The address to send the funds.
      */
-    function requestAmount() external view returns (uint256);
+    function claimFunds(uint256 _amount, address _destination) external;
 
     /**
-        @dev The percentage of value of the drawdown amount to post as collateral in basis points.
+     *  @dev   Draw down funds from the loan.
+     *  @param _amount      The amount to draw down.
+     *  @param _destination The address to send the funds.
      */
-    function collateralRatio() external view returns (uint256);
+    function drawdownFunds(uint256 _amount, address _destination) external;
 
     /**
-        @dev The timestamp of when Loan was instantiated.
+     *  @dev    Lend funds to the loan/borrower.
+     *  @param  _lender The address to be registered as the lender.
+     *  @return The amount lent.
      */
-    function createdAt() external view returns (uint256);
+    function lend(address _lender) external returns (uint256);
 
     /**
-        @dev The time for a Loan to be funded in seconds.
+     *  @dev    Make one installment payment to the loan.
+     *  @return The amount paid.
      */
-    function fundingPeriod() external view returns (uint256);
+    function makePayment() external returns (uint256);
 
     /**
-        @dev The time a Borrower has, after a payment is due, to make a payment before a liquidation can occur.
+     *  @dev    Make several installment payments to the loan.
+     *  @param  numberOfPayments The number of payment installments to make.
+     *  @return The amount paid.
      */
-    function defaultGracePeriod() external view returns (uint256);
+    function makePayments(uint256 numberOfPayments) external returns (uint256);
 
     /**
-        @dev The amount of principal owed (initially the drawdown amount).
+     *  @dev    Post collateral to the loan.
+     *  @return The amount posted.
      */
-    function principalOwed() external view returns (uint256);
+    function postCollateral() external returns (uint256);
 
     /**
-        @dev The amount of principal that has been paid by the Borrower since the Loan instantiation.
+     *  @dev   Remove collateral from the loan (opposite of posting collateral).
+     *  @param _amount      The amount removed.
+     *  @param _destination The destination to send the removed collateral.
      */
-    function principalPaid() external view returns (uint256);
+    function removeCollateral(uint256 _amount, address _destination) external;
 
     /**
-        @dev The amount of interest that has been paid by the Borrower since the Loan instantiation.
+     *  @dev    Return funds to the loan (opposite of drawing down).
+     *  @return The amount returned.
      */
-    function interestPaid() external view returns (uint256);
+    function returnFunds() external returns (uint256);
 
     /**
-        @dev The amount of fees that have been paid by the Borrower since the Loan instantiation.
+     *  @dev    Repossess collateral, and any funds, for a loan in default.
+     *  @param  _collateralAssetDestination The address where the collateral asset is to be sent.
+     *  @param  _fundsAssetDestination      The address where the funds asset is to be sent.
+     *  @return collateralAssetAmount       The amount of collateral asset repossessed.
+     *  @return fundsAssetAmount            The amount of funds asset repossessed.
      */
-    function feePaid() external view returns (uint256);
+    function repossess(address _collateralAssetDestination, address _fundsAssetDestination) external returns (
+        uint256 collateralAssetAmount,
+        uint256 fundsAssetAmount
+    );
+
+    /**************************/
+    /*** Readonly Functions ***/
+    /**************************/
 
     /**
-        @dev The amount of excess that has been returned to the Lenders after the Loan drawdown.
+     *  @dev    Get the breakdown of the total payment needed to satisfy `numberOfPayments` payment installments.
+     *  @param  numberOfPayments     The number of payment installments.
+     *  @return totalPrincipalAmount The portion of the total amount that will go towards principal.
+     *  @return totalInterestFees    The portion of the total amount that will go towards interest fees.
+     *  @return totalLateFees        The portion of the total amount that will go towards late fees.
      */
-    function excessReturned() external view returns (uint256);
-
-    /**
-        @dev The amount of Collateral Asset that has been liquidated after default.
-     */
-    function amountLiquidated() external view returns (uint256);
-
-    /**
-        @dev The amount of Liquidity Asset that has been recovered after default.
-     */
-    function amountRecovered() external view returns (uint256);
-
-    /**
-        @dev The difference between `amountRecovered` and `principalOwed` after liquidation.
-     */
-    function defaultSuffered() external view returns (uint256);
-
-    /**
-        @dev The amount of Liquidity Asset that is to be returned to the Borrower, if `amountRecovered > principalOwed`.
-     */
-    function liquidationExcess() external view returns (uint256);
-
-    /**
-        @dev   Draws down funding from FundingLocker, posts collateral, and transitions the Loan state from `Ready` to `Active`. 
-        @dev   Only the Borrower can call this function. 
-        @dev   It emits four `BalanceUpdated` events. 
-        @dev   It emits a `LoanStateChanged` event. 
-        @dev   It emits a `Drawdown` event. 
-        @param amt the amount of Liquidity Asset the Borrower draws down. Remainder is returned to the Loan where it can be claimed back by LoanFDT holders.
-     */
-    function drawdown(uint256 amt) external;
-
-    /**
-        @dev Makes a payment for this Loan. 
-        @dev Amounts are calculated for the Borrower. 
-     */
-    function makePayment() external;
-
-    /**
-        @dev Makes the full payment for this Loan (a.k.a. "calling" the Loan). 
-        @dev This requires the Borrower to pay a premium fee. 
-     */
-    function makeFullPayment() external;
-    
-    /**
-        @dev   Funds this Loan and mints LoanFDTs for `mintTo` (DebtLocker in the case of Pool funding). 
-        @dev   Only LiquidityLocker using valid/approved Pool can call this function. 
-        @dev   It emits a `LoanFunded` event. 
-        @dev   It emits a `BalanceUpdated` event. 
-        @param mintTo The address that LoanFDTs are minted to.
-        @param amt    The amount to fund the Loan.
-     */
-    function fundLoan(address mintTo, uint256 amt) external;
-
-    /**
-        @dev Handles returning capital to the Loan, where it can be claimed back by LoanFDT holders, 
-             if the Borrower has not drawn down on the Loan past the drawdown grace period. 
-        @dev It emits a `LoanStateChanged` event. 
-     */
-    function unwind() external;
-
-    /**
-        @dev Triggers a default if the Loan meets certain default conditions, liquidating all collateral and updating accounting. 
-        @dev Only the an account with sufficient LoanFDTs of this Loan can call this function. 
-        @dev It emits a `BalanceUpdated` event. 
-        @dev It emits a `Liquidation` event. 
-        @dev It emits a `LoanStateChanged` event. 
-     */
-    function triggerDefault() external;
-
-    /**
-        @dev Triggers paused state. 
-        @dev Halts functionality for certain functions. Only the Borrower or a Loan Admin can call this function. 
-     */
-    function pause() external;
-
-    /**
-        @dev Triggers unpaused state. 
-        @dev Restores functionality for certain functions. 
-        @dev Only the Borrower or a Loan Admin can call this function. 
-     */
-    function unpause() external;
-
-    /**
-        @dev   Sets a Loan Admin. 
-        @dev   Only the Borrower can call this function. 
-        @dev   It emits a `LoanAdminSet` event. 
-        @param loanAdmin The address being allowed or disallowed as a Loan Admin.
-        @param allowed   The atatus of a Loan Admin.
-     */
-    function setLoanAdmin(address loanAdmin, bool allowed) external;
-
-    /**
-        @dev   Transfers any locked funds to the Governor. 
-        @dev   Only the Governor can call this function. 
-        @param token The address of the token to be reclaimed.
-     */
-    function reclaimERC20(address token) external;
-
-    /**
-        @dev    Returns the expected amount of Liquidity Asset to be recovered from a liquidation based on current oracle prices.
-        @return The minimum amount of Liquidity Asset that can be expected by swapping Collateral Asset.
-     */
-    function getExpectedAmountRecovered() external view returns (uint256);
-
-    /**
-        @dev    Returns information of the next payment amount.
-        @return The entitled interest of the next payment (Principal + Interest only when the next payment is last payment of the Loan).
-        @return The entitled principal amount needed to be paid in the next payment.
-        @return The entitled interest amount needed to be paid in the next payment.
-        @return The payment due date.
-        @return Whether the payment is late.
-     */
-    function getNextPayment() external view returns (uint256, uint256, uint256, uint256, bool);
-
-    /**
-        @dev    Returns the information of a full payment amount.
-        @return total     Principal and interest owed, combined.
-        @return principal Principal owed.
-        @return interest  Interest owed.
-     */
-    function getFullPayment() external view returns (uint256 total, uint256 principal, uint256 interest);
-
-    /**
-        @dev    Calculates the collateral required to draw down amount.
-        @param  amt The amount of the Liquidity Asset to draw down from the FundingLocker.
-        @return The amount of the Collateral Asset required to post in the CollateralLocker for a given drawdown amount.
-     */
-    function collateralRequiredForDrawdown(uint256 amt) external view returns (uint256);
+    function getNextPaymentsBreakDown(uint256 numberOfPayments) external view returns (
+        uint256 totalPrincipalAmount,
+        uint256 totalInterestFees,
+        uint256 totalLateFees
+    );
 
 }

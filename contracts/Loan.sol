@@ -1,506 +1,431 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-pragma solidity 0.6.11;
+pragma solidity ^0.8.7;
 
-import { BasicFundsTokenFDT }                    from "../modules/funds-distribution-token/contracts/BasicFundsTokenFDT.sol";
-import { Context as ERC20Context }               from "../modules/funds-distribution-token/modules/openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
-import { IERC20, SafeERC20 }                     from "../modules/openzeppelin-contracts/contracts/token/ERC20/SafeERC20.sol";
-import { Context as PauseableContext, Pausable } from "../modules/openzeppelin-contracts/contracts/utils/Pausable.sol";
-import { Util, IMapleGlobals }                   from "../modules/util/contracts/Util.sol";
+import { IERC20 } from "../modules/erc20/src/interfaces/IERC20.sol";
 
-import { LoanLib } from "./libraries/LoanLib.sol";
+import { ERC20Helper } from "../modules/erc20-helper/src/ERC20Helper.sol";
 
-import { ILoan }        from "./interfaces/ILoan.sol";
-import { ILoanFactory } from "./interfaces/ILoanFactory.sol";
-import {
-    IERC20Details as IERC20DetailsLike,  // NOTE: Necessary for https://github.com/ethereum/solidity/issues/9278
-    ICollateralLockerLike,
-    ILockerFactoryLike,
-    IFundingLockerLike,
-    IMapleGlobals as IMapleGlobalsLike,  // NOTE: Necessary for https://github.com/ethereum/solidity/issues/9278
-    ILiquidityLockerLike,
-    IPoolLike,
-    IPoolFactoryLike
-} from "./interfaces/Interfaces.sol";
+import { ILoan } from "./interfaces/ILoan.sol";
+
+// could be collateral, drawableFunds, claimableFunds left 
 
 /// @title Loan maintains all accounting and functionality related to Loans.
-contract Loan is ILoan, BasicFundsTokenFDT, Pausable {
+abstract contract Loan is ILoan {
 
-    using SafeERC20 for IERC20;
+    // Roles
+    address public override borrower;
+    address public override lender;
 
-    State public override loanState;
+    // Assets
+    address public override collateralAsset;
+    address public override fundsAsset;
 
-    address public override immutable liquidityAsset;
-    address public override immutable collateralAsset;
+    // Static Loan Parameters
+    uint256 public override endingPrincipal;
+    uint256 public override gracePeriod;
+    uint256 public override interestRate;
+    uint256 public override lateFeeRate;
+    uint256 public override paymentInterval;
 
-    address public override immutable fundingLocker;
-    address public override immutable flFactory;
-    address public override immutable collateralLocker;
-    address public override immutable clFactory;
-    address public override immutable borrower;
-    address public override immutable repaymentCalc;
-    address public override immutable lateFeeCalc;
-    address public override immutable premiumCalc;
-    address public override immutable superFactory;
+    // Requests
+    uint256 public override collateralRequired;
+    uint256 public override principalRequired;
 
-    mapping(address => bool) public override loanAdmins;
+    // State
+    uint256 public override drawableFunds;
+    uint256 public override claimableFunds;
+    uint256 public override collateral;
+    uint256 public override nextPaymentDueDate;
+    uint256 public override paymentsRemaining;
+    uint256 public override principal;
 
-    uint256 public override nextPaymentDue;
+    /********************************************/
+    /*** External Virtual Borrowing Functions ***/
+    /********************************************/
 
-    // Loan specifications
-    uint256 public override immutable apr;
-    uint256 public override           paymentsRemaining;
-    uint256 public override immutable termDays;
-    uint256 public override immutable paymentIntervalSeconds;
-    uint256 public override immutable requestAmount;
-    uint256 public override immutable collateralRatio;
-    uint256 public override immutable createdAt;
-    uint256 public override immutable fundingPeriod;
-    uint256 public override immutable defaultGracePeriod;
-
-    // Accounting variables
-    uint256 public override principalOwed;
-    uint256 public override principalPaid;
-    uint256 public override interestPaid;
-    uint256 public override feePaid;
-    uint256 public override excessReturned;
-
-    // Liquidation variables
-    uint256 public override amountLiquidated;
-    uint256 public override amountRecovered;
-    uint256 public override defaultSuffered;
-    uint256 public override liquidationExcess;
-
-    /**
-        @dev    Constructor for a Loan. 
-        @dev    It emits a `LoanStateChanged` event. 
-        @param  _borrower        Will receive the funding when calling `drawdown()`. Is also responsible for repayments.
-        @param  _liquidityAsset  The asset the Borrower is requesting funding in.
-        @param  _collateralAsset The asset provided as collateral by the Borrower.
-        @param  _flFactory       Factory to instantiate FundingLocker with.
-        @param  _clFactory       Factory to instantiate CollateralLocker with.
-        @param  specs            Contains specifications for this Loan. 
-                                     [0] => apr, 
-                                     [1] => termDays, 
-                                     [2] => paymentIntervalDays (aka PID), 
-                                     [3] => requestAmount, 
-                                     [4] => collateralRatio. 
-        @param  calcs            The calculators used for this Loan. 
-                                     [0] => repaymentCalc, 
-                                     [1] => lateFeeCalc, 
-                                     [2] => premiumCalc. 
-     */
-    constructor(
-        address _borrower,
-        address _liquidityAsset,
-        address _collateralAsset,
-        address _flFactory,
-        address _clFactory,
-        uint256[5] memory specs,
-        address[3] memory calcs
-    ) BasicFundsTokenFDT("Maple Loan Token", "MPL-LOAN", _liquidityAsset) public {
-        IMapleGlobalsLike globals = _globals(msg.sender);
-
-        // Perform validity cross-checks.
-        LoanLib.loanSanityChecks(globals, _liquidityAsset, _collateralAsset, specs);
-
-        borrower        = _borrower;
-        liquidityAsset  = _liquidityAsset;
-        collateralAsset = _collateralAsset;
-        flFactory       = _flFactory;
-        clFactory       = _clFactory;
-        createdAt       = block.timestamp;
-
-        // Update state variables.
-        apr                    = specs[0];
-        termDays               = specs[1];
-        paymentsRemaining      = specs[1].div(specs[2]);
-        paymentIntervalSeconds = specs[2].mul(1 days);
-        requestAmount          = specs[3];
-        collateralRatio        = specs[4];
-        fundingPeriod          = globals.fundingPeriod();
-        defaultGracePeriod     = globals.defaultGracePeriod();
-        repaymentCalc          = calcs[0];
-        lateFeeCalc            = calcs[1];
-        premiumCalc            = calcs[2];
-        superFactory           = msg.sender;
-
-        // Deploy lockers.
-        collateralLocker = ILockerFactoryLike(_clFactory).newLocker(_collateralAsset);
-        fundingLocker    = ILockerFactoryLike(_flFactory).newLocker(_liquidityAsset);
-        emit LoanStateChanged(State.Ready);
+    function drawdownFunds(uint256 _amount, address _destination) external virtual override {
+        require(msg.sender == borrower, "L:DF:NOT_BORROWER");
+        _drawdownFunds(_amount, _destination);
     }
 
-    /**************************/
-    /*** Borrower Functions ***/
-    /**************************/
-
-    function drawdown(uint256 amt) external override {
-        _whenProtocolNotPaused();
-        _isValidBorrower();
-        _isValidState(State.Ready);
-        IMapleGlobalsLike globals = _globals(superFactory);
-
-        IFundingLockerLike _fundingLocker = IFundingLockerLike(fundingLocker);
-
-        require(amt >= requestAmount,              "L:AMT_LT_REQUEST_AMT");
-        require(amt <= _getFundingLockerBalance(), "L:AMT_GT_FUNDED_AMT");
-
-        // Update accounting variables for the Loan.
-        principalOwed  = amt;
-        nextPaymentDue = block.timestamp.add(paymentIntervalSeconds);
-
-        loanState = State.Active;
-
-        // Transfer the required amount of collateral for drawdown from the Borrower to the CollateralLocker.
-        IERC20(collateralAsset).safeTransferFrom(borrower, collateralLocker, collateralRequiredForDrawdown(amt));
-
-        // Transfer funding amount from the FundingLocker to the Borrower, then drain remaining funds to the Loan.
-        uint256 treasuryFee = globals.treasuryFee();
-        uint256 investorFee = globals.investorFee();
-
-        address treasury = globals.mapleTreasury();
-
-        uint256 _feePaid = feePaid = amt.mul(investorFee).div(10_000);  // Update fees paid for `claim()`.
-        uint256 treasuryAmt        = amt.mul(treasuryFee).div(10_000);  // Calculate amount to send to the MapleTreasury.
-
-        _transferFunds(_fundingLocker, treasury, treasuryAmt);                         // Send the treasury fee directly to the MapleTreasury.
-        _transferFunds(_fundingLocker, borrower, amt.sub(treasuryAmt).sub(_feePaid));  // Transfer drawdown amount to the Borrower.
-
-        // Update excessReturned for `claim()`.
-        excessReturned = _getFundingLockerBalance().sub(_feePaid);
-
-        // Drain remaining funds from the FundingLocker (amount equal to `excessReturned` plus `feePaid`)
-        _fundingLocker.drain();
-
-        // Call `updateFundsReceived()` update LoanFDT accounting with funds received from fees and excess returned.
-        updateFundsReceived();
-
-        _emitBalanceUpdateEventForCollateralLocker();
-        _emitBalanceUpdateEventForFundingLocker();
-        _emitBalanceUpdateEventForLoan();
-
-        emit BalanceUpdated(treasury, liquidityAsset, IERC20(liquidityAsset).balanceOf(treasury));
-        emit LoanStateChanged(State.Active);
-        emit Drawdown(amt);
+    function makePayment() external virtual override returns (uint256) {
+        return _makePayment(uint256(1));
     }
 
-    function makePayment() external override {
-        _whenProtocolNotPaused();
-        _isValidState(State.Active);
-        (uint256 total, uint256 principal, uint256 interest,, bool paymentLate) = getNextPayment();
-        --paymentsRemaining;
-        _makePayment(total, principal, interest, paymentLate);
+    function makePayments(uint256 numberOfPayments) external virtual override returns (uint256) {
+        return _makePayment(numberOfPayments);
     }
 
-    function makeFullPayment() external override {
-        _whenProtocolNotPaused();
-        _isValidState(State.Active);
-        (uint256 total, uint256 principal, uint256 interest) = getFullPayment();
-        paymentsRemaining = uint256(0);
-        _makePayment(total, principal, interest, false);
+    function postCollateral() external virtual override returns (uint256) {
+        return _postCollateral();
     }
 
-    /**
-        @dev Updates the payment variables and transfers funds from the Borrower into the Loan.
-        @dev It emits one or two `BalanceUpdated` events (depending if payments remaining).
-        @dev It emits a `LoanStateChanged` event if no payments remaining.
-        @dev It emits a `PaymentMade` event.
-    */
-    function _makePayment(uint256 total, uint256 principal, uint256 interest, bool paymentLate) internal {
+    function removeCollateral(uint256 _amount, address _destination) external virtual override {
+        require(msg.sender == borrower, "L:DF:NOT_BORROWER");
+        _removeCollateral(_amount, _destination);
+    }
 
-        // Caching to reduce `SLOADs`.
-        uint256 _paymentsRemaining = paymentsRemaining;
+    function returnFunds() external virtual override returns (uint256) {
+        return _returnFunds();
+    }
 
-        // Update internal accounting variables.
-        interestPaid = interestPaid.add(interest);
-        if (principal > uint256(0)) principalPaid = principalPaid.add(principal);
+    /******************************************/
+    /*** External Virtual Lending Functions ***/
+    /******************************************/
 
-        if (_paymentsRemaining > uint256(0)) {
-            // Update info related to next payment and, if needed, decrement principalOwed.
-            nextPaymentDue = nextPaymentDue.add(paymentIntervalSeconds);
-            if (principal > uint256(0)) principalOwed = principalOwed.sub(principal);
-        } else {
-            // Update info to close loan.
-            principalOwed  = uint256(0);
-            loanState      = State.Matured;
-            nextPaymentDue = uint256(0);
+    function claimFunds(uint256 _amount, address _destination) external virtual override {
+        require(msg.sender == lender, "L:DF:NOT_LENDER");
+        _claimFunds(_amount, _destination);
+    }
 
-            // Transfer all collateral back to the Borrower.
-            ICollateralLockerLike(collateralLocker).pull(borrower, _getCollateralLockerBalance());
-            _emitBalanceUpdateEventForCollateralLocker();
-            emit LoanStateChanged(State.Matured);
-        }
+    function lend(address _lender) external virtual override returns (uint256) {
+        return _lend(_lender);
+    }
 
-        // Loan payer sends funds to the Loan.
-        IERC20(liquidityAsset).safeTransferFrom(msg.sender, address(this), total);
+    function repossess(address _collateralAssetDestination, address _fundsAssetDestination)
+        external virtual override
+        returns (uint256 collateralAssetAmount, uint256 fundsAssetAmount)
+    {
+        require(msg.sender == lender, "L:DF:NOT_LENDER");
+        return _repossess(_collateralAssetDestination, _fundsAssetDestination);
+    }
 
-        // Update FDT accounting with funds received from interest payment.
-        updateFundsReceived();
+    /*********************************/
+    /*** External Getter Functions ***/
+    /*********************************/
 
-        emit PaymentMade(
-            total,
+    function getNextPaymentsBreakDown(uint256 numberOfPayments)
+        external view virtual override
+        returns (uint256 totalPrincipalAmount, uint256 totalInterestFees, uint256 totalLateFees)
+    {
+        return _getPaymentsBreakdown(
+            numberOfPayments,
+            block.timestamp,
+            nextPaymentDueDate,
+            paymentInterval,
             principal,
-            interest,
-            _paymentsRemaining,
-            principalOwed,
-            _paymentsRemaining > 0 ? nextPaymentDue : 0,
-            paymentLate
-        );
-
-        _emitBalanceUpdateEventForLoan();
-    }
-
-    /************************/
-    /*** Lender Functions ***/
-    /************************/
-
-    function fundLoan(address mintTo, uint256 amt) whenNotPaused external override {
-        _whenProtocolNotPaused();
-        _isValidState(State.Ready);
-        _isValidPool();
-        _isWithinFundingPeriod();
-        IERC20(liquidityAsset).safeTransferFrom(msg.sender, fundingLocker, amt);
-
-        uint256 wad = _toWad(amt);  // Convert to WAD precision.
-        _mint(mintTo, wad);         // Mint LoanFDTs to `mintTo` (i.e DebtLocker contract).
-
-        emit LoanFunded(mintTo, amt);
-        _emitBalanceUpdateEventForFundingLocker();
-    }
-
-    function unwind() external override {
-        _whenProtocolNotPaused();
-        _isValidState(State.Ready);
-
-        // Update accounting for `claim()` and transfer funds from FundingLocker to Loan.
-        excessReturned = LoanLib.unwind(IERC20(liquidityAsset), fundingLocker, createdAt, fundingPeriod);
-
-        updateFundsReceived();
-
-        // Transition state to `Expired`.
-        loanState = State.Expired;
-        emit LoanStateChanged(State.Expired);
-    }
-
-    function triggerDefault() external override {
-        _whenProtocolNotPaused();
-        _isValidState(State.Active);
-        require(LoanLib.canTriggerDefault(nextPaymentDue, defaultGracePeriod, superFactory, balanceOf(msg.sender), totalSupply()), "L:FAILED_TO_LIQ");
-
-        // Pull the Collateral Asset from the CollateralLocker, swap to the Liquidity Asset, and hold custody of the resulting Liquidity Asset in the Loan.
-        (amountLiquidated, amountRecovered) = LoanLib.liquidateCollateral(IERC20(collateralAsset), liquidityAsset, superFactory, collateralLocker);
-        _emitBalanceUpdateEventForCollateralLocker();
-
-        // Decrement `principalOwed` by `amountRecovered`, set `defaultSuffered` to the difference (shortfall from the liquidation).
-        if (amountRecovered <= principalOwed) {
-            principalOwed   = principalOwed.sub(amountRecovered);
-            defaultSuffered = principalOwed;
-        }
-        // Set `principalOwed` to zero and return excess value from the liquidation back to the Borrower.
-        else {
-            liquidationExcess = amountRecovered.sub(principalOwed);
-            principalOwed = 0;
-            IERC20(liquidityAsset).safeTransfer(borrower, liquidationExcess);  // Send excess to the Borrower.
-        }
-
-        // Update LoanFDT accounting with funds received from the liquidation.
-        updateFundsReceived();
-
-        // Transition `loanState` to `Liquidated`
-        loanState = State.Liquidated;
-
-        emit Liquidation(amountLiquidated, amountRecovered, liquidationExcess, defaultSuffered);
-        emit LoanStateChanged(State.Liquidated);
-    }
-
-    /***********************/
-    /*** Admin Functions ***/
-    /***********************/
-
-    function pause() external override {
-        _isValidBorrowerOrLoanAdmin();
-        super._pause();
-    }
-
-    function unpause() external override {
-        _isValidBorrowerOrLoanAdmin();
-        super._unpause();
-    }
-
-    function setLoanAdmin(address loanAdmin, bool allowed) external override {
-        _whenProtocolNotPaused();
-        _isValidBorrower();
-        loanAdmins[loanAdmin] = allowed;
-        emit LoanAdminSet(loanAdmin, allowed);
-    }
-
-    /**************************/
-    /*** Governor Functions ***/
-    /**************************/
-
-    function reclaimERC20(address token) external override {
-        LoanLib.reclaimERC20(token, liquidityAsset, _globals(superFactory));
-    }
-
-    /*********************/
-    /*** FDT Functions ***/
-    /*********************/
-
-    function withdrawFunds() public override {
-        _whenProtocolNotPaused();
-        super.withdrawFunds();
-        emit BalanceUpdated(address(this), fundsToken, IERC20(fundsToken).balanceOf(address(this)));
-    }
-
-    /************************/
-    /*** Getter Functions ***/
-    /************************/
-
-    function getExpectedAmountRecovered() external override view returns (uint256) {
-        uint256 liquidationAmt = _getCollateralLockerBalance();
-        return Util.calcMinAmount(IMapleGlobals(address(_globals(superFactory))), collateralAsset, liquidityAsset, liquidationAmt);
-    }
-
-    function getNextPayment() public override view returns (uint256, uint256, uint256, uint256, bool) {
-        return LoanLib.getNextPayment(repaymentCalc, nextPaymentDue, lateFeeCalc);
-    }
-
-    function getFullPayment() public override view returns (uint256 total, uint256 principal, uint256 interest) {
-        (total, principal, interest) = LoanLib.getFullPayment(repaymentCalc, nextPaymentDue, lateFeeCalc, premiumCalc);
-    }
-
-    function collateralRequiredForDrawdown(uint256 amt) public override view returns (uint256) {
-        return LoanLib.collateralRequiredForDrawdown(
-            IERC20DetailsLike(collateralAsset),
-            IERC20DetailsLike(liquidityAsset),
-            collateralRatio,
-            superFactory,
-            amt
+            endingPrincipal,
+            interestRate,
+            paymentsRemaining,
+            lateFeeRate
         );
     }
 
-    /************************/
-    /*** Helper Functions ***/
-    /************************/
+    /*****************/
+    /*** Modifiers ***/
+    /*****************/
 
-    /**
-        @dev Checks that the protocol is not in a paused state.
-     */
-    function _whenProtocolNotPaused() internal view {
-        require(!_globals(superFactory).protocolPaused(), "L:PROTO_PAUSED");
-    }
-
-    /**
-        @dev Checks that `msg.sender` is the Borrower or a Loan Admin.
-     */
-    function _isValidBorrowerOrLoanAdmin() internal view {
-        require(msg.sender == borrower || loanAdmins[msg.sender], "L:NOT_BORROWER_OR_ADMIN");
-    }
-
-    /**
-        @dev Converts to WAD precision.
-     */
-    function _toWad(uint256 amt) internal view returns (uint256) {
-        return amt.mul(10 ** 18).div(10 ** IERC20DetailsLike(liquidityAsset).decimals());
-    }
-
-    /**
-        @dev Returns the MapleGlobals instance.
-     */
-    function _globals(address loanFactory) internal view returns (IMapleGlobalsLike) {
-        return IMapleGlobalsLike(ILoanFactory(loanFactory).globals());
-    }
-
-    /**
-        @dev Returns the CollateralLocker balance.
-     */
-    function _getCollateralLockerBalance() internal view returns (uint256) {
-        return IERC20(collateralAsset).balanceOf(collateralLocker);
-    }
-
-    /**
-        @dev Returns the FundingLocker balance.
-     */
-    function _getFundingLockerBalance() internal view returns (uint256) {
-        return IERC20(liquidityAsset).balanceOf(fundingLocker);
-    }
-
-    /**
-        @dev   Checks that the current state of the Loan matches the provided state.
-        @param _state Enum of desired Loan state.
-     */
-    function _isValidState(State _state) internal view {
-        require(loanState == _state, "L:INVALID_STATE");
-    }
-
-    /**
-        @dev Checks that `msg.sender` is the Borrower.
-     */
-    function _isValidBorrower() internal view {
-        require(msg.sender == borrower, "L:NOT_BORROWER");
-    }
-
-    /**
-        @dev Checks that `msg.sender` is a Lender (LiquidityLocker) that is using an approved Pool to fund the Loan.
-     */
-    function _isValidPool() internal view {
-        address pool        = ILiquidityLockerLike(msg.sender).pool();
-        address poolFactory = IPoolLike(pool).superFactory();
+    modifier maintainsCollateral() {
+        _;
+        // Require that the final collateral ratio is commensurate with the amount of outstanding principal
+        // uint256 outstandingPrincipal = principal > drawableFunds ? principal - drawableFunds : 0;
+        // require(collateral / outstandingPrincipal >= collateralRequired / principalRequired, "L:INSUF_COLLATERAL");
         require(
-            _globals(superFactory).isValidPoolFactory(poolFactory) &&
-            IPoolFactoryLike(poolFactory).isPool(pool),
-            "L:INVALID_LENDER"
+            collateral * principalRequired >= collateralRequired * (principal > drawableFunds ? principal - drawableFunds : uint256(0)),
+            "L:INSUF_COLLATERAL"
         );
     }
 
-    /**
-        @dev Checks that "now" is currently within the funding period.
-     */
-    function _isWithinFundingPeriod() internal view {
-        require(block.timestamp <= createdAt.add(fundingPeriod), "L:PAST_FUNDING_PERIOD");
+    modifier maintainsFunds() {
+        _;
+        // Require that the final funds balance of the loan is sufficient
+        require(
+            IERC20(fundsAsset).balanceOf(address(this)) >= drawableFunds + claimableFunds + (collateralAsset == fundsAsset ? collateral : uint256(0)),
+            "L:INSUF_FUNDS"
+        );
     }
+
+    /*****************************************/
+    /*** Internal State-Changing Functions ***/
+    /*****************************************/
 
     /**
-        @dev   Transfers funds from the FundingLocker.
-        @param from  Instance of the FundingLocker.
-        @param to    Address to send funds to.
-        @param value Amount to send.
+     *  @dev   Initializes the loan.
+     *  @param _borrower   The address of the borrower.
+     *  @param _assets     Array of asset addresses. 
+     *                       [0]: collateralAsset, 
+     *                       [1]: fundsAsset.
+     *  @param _parameters Array of loan parameters: 
+     *                       [0]: endingPrincipal, 
+     *                       [1]: gracePeriod, 
+     *                       [2]: interestRate, 
+     *                       [3]: lateFeeRate, 
+     *                       [4]: paymentInterval, 
+     *                       [5]: paymentsRemaining.
+     *  @param _requests   Requested amounts: 
+     *                       [0]: collateralRequired, 
+     *                       [1]: principalRequired.
      */
-    function _transferFunds(IFundingLockerLike from, address to, uint256 value) internal {
-        from.pull(to, value);
+    function _initialize(address _borrower, address[2] memory _assets, uint256[6] memory _parameters, uint256[2] memory _requests) internal {
+        borrower = _borrower;
+
+        collateralAsset = _assets[0];
+        fundsAsset      = _assets[1];
+
+        endingPrincipal   = _parameters[0];
+        gracePeriod       = _parameters[1];
+        interestRate      = _parameters[2];
+        lateFeeRate       = _parameters[3];
+        paymentInterval   = _parameters[4];
+        paymentsRemaining = _parameters[5];
+
+        collateralRequired = _requests[0];
+        principalRequired  = _requests[1];
+
+        emit Initialized(_borrower, _assets, _parameters, _requests);
     }
 
     /**
-        @dev Emits a `BalanceUpdated` event for the Loan.
-        @dev It emits a `BalanceUpdated` event.
+     *  @dev Sends any unaccounted amount of an asset to an address.
      */
-    function _emitBalanceUpdateEventForLoan() internal {
-        emit BalanceUpdated(address(this), liquidityAsset, IERC20(liquidityAsset).balanceOf(address(this)));
+    function _skim(address _asset, address _destination) internal returns (uint256 amount) {
+        amount = _asset == collateralAsset
+            ? _getExtraCollateral()
+            : _asset == fundsAsset
+                ? _getExtraFunds()
+                : IERC20(_asset).balanceOf(address(this));
+
+        require(ERC20Helper.transfer(_asset, _destination, amount), "L:S:TRANSFER_FAILED");
+
+        emit Skimmed(_asset, _destination, amount);
+    }
+
+    /**************************************/
+    /*** Internal Borrow-side Functions ***/
+    /**************************************/
+
+    function _drawdownFunds(uint256 _amount, address _destination) internal maintainsCollateral {
+        drawableFunds -= _amount;
+        require(ERC20Helper.transfer(fundsAsset, _destination, _amount), "L:DF:TRANSFER_FAILED");
+        emit FundsDrawnDown(_amount);
+    }
+
+    function _makePayment(uint256 numberOfPayments) internal returns (uint256 totalAmountPaid) {
+        (uint256 totalPrincipalAmount, uint256 totalInterestFees, uint256 totalLateFees) = _getPaymentsBreakdown(
+            numberOfPayments,
+            block.timestamp,
+            nextPaymentDueDate,
+            paymentInterval,
+            principal,
+            endingPrincipal,
+            interestRate,
+            paymentsRemaining,
+            lateFeeRate
+        );
+
+        // The drawable funds are increased by the extra funds in the contract, minus the total needed for payment
+        drawableFunds = drawableFunds + _getExtraFunds() - (totalAmountPaid = (totalPrincipalAmount + totalInterestFees + totalLateFees));
+
+        claimableFunds     += totalAmountPaid;
+        nextPaymentDueDate += paymentInterval;
+        principal          -= totalPrincipalAmount;
+        paymentsRemaining  -= numberOfPayments;
+
+        // TODO: How to ensure we don't end up with some principal remaining but no payments remaining?
+        //       Perhaps force the last payment to include all outstanding principal, just in case _getPaymentsBreakdown produces a rounding error.
+
+        emit PaymentsMade(numberOfPayments, totalPrincipalAmount, totalInterestFees, totalLateFees);
+    }
+
+    function _postCollateral() internal returns (uint256 amount) {
+        collateral += (amount = _getExtraCollateral());
+        emit CollateralPosted(amount);
+    }
+
+    function _removeCollateral(uint256 _amount, address _destination) internal maintainsCollateral {
+        collateral -= _amount;
+        require(ERC20Helper.transfer(collateralAsset, _destination, _amount), "L:RC:TRANSFER_FAILED");
+        emit CollateralRemoved(_amount);
+    }
+
+    function _returnFunds() internal returns (uint256 amount) {
+        drawableFunds += (amount = _getExtraFunds());
+        emit FundsReturned(amount);
+    }
+
+    /************************************/
+    /*** Internal Lend-side Functions ***/
+    /************************************/
+
+    function _claimFunds(uint256 _amount, address _destination) internal maintainsFunds {
+        claimableFunds -= _amount;
+        require(ERC20Helper.transfer(fundsAsset, _destination, _amount), "L:CF:TRANSFER_FAILED");
+        emit FundsClaimed(_amount);
+    }
+
+    function _lend(address _lender) internal returns (uint256 amount) {
+        require(nextPaymentDueDate == uint256(0) && paymentsRemaining > uint256(0),           "L:L:ALREADY_LENT");
+        require(principalRequired == (drawableFunds = principal = amount = _getExtraFunds()), "L:L:INSUFFICIENT_AMOUNT");
+
+        nextPaymentDueDate = block.timestamp + paymentInterval;
+        emit Funded(lender = _lender, nextPaymentDueDate);
+    }
+
+    function _repossess(address _collateralAssetDestination, address _fundsAssetDestination)
+        internal
+        returns (uint256 collateralAssetAmount, uint256 fundsAssetAmount)
+    {
+        require(block.timestamp > nextPaymentDueDate + gracePeriod, "L:TD:NOT_IN_DEFAULT");
+
+        // Transfer collateral and principal assets from the loan to the lender's destination of choice.
+        collateralAssetAmount = IERC20(collateralAsset).balanceOf(address(this));
+
+        if (collateralAssetAmount > uint256(0)) {
+            require(ERC20Helper.transfer(collateralAsset, _collateralAssetDestination, collateralAssetAmount), "L:TD:COLLATERAL_TRANSFER_FAILED");
+        }
+
+        fundsAssetAmount = IERC20(fundsAsset).balanceOf(address(this));
+
+        if (fundsAssetAmount > uint256(0)) {
+            require(ERC20Helper.transfer(fundsAsset, _fundsAssetDestination, fundsAssetAmount), "L:TD:FUNDS_TRANSFER_FAILED");
+        }
+
+        drawableFunds      = uint256(0);
+        claimableFunds     = uint256(0);
+        collateral         = uint256(0);
+        nextPaymentDueDate = uint256(0);
+        principal          = uint256(0);
+        paymentsRemaining  = uint256(0);
+
+        emit Repossessed(collateralAssetAmount, fundsAssetAmount);
+    }
+
+    /****************************************/
+    /*** Internal View Readonly Functions ***/
+    /****************************************/
+
+    /**
+     *  @dev Returns the amount of collateralAsset above what has been currently accounted for.
+     */
+    function _getExtraCollateral() internal view returns (uint256) {
+        return IERC20(collateralAsset).balanceOf(address(this))
+            - collateral
+            - (collateralAsset == fundsAsset ? drawableFunds + claimableFunds : uint256(0));
     }
 
     /**
-        @dev Emits a `BalanceUpdated` event for the FundingLocker.
-        @dev It emits a `BalanceUpdated` event.
+     *  @dev Returns the amount of fundsAsset above what has been currently accounted for.
      */
-    function _emitBalanceUpdateEventForFundingLocker() internal {
-        emit BalanceUpdated(fundingLocker, liquidityAsset, _getFundingLockerBalance());
+    function _getExtraFunds() internal view returns (uint256) {
+        return IERC20(fundsAsset).balanceOf(address(this))
+            - drawableFunds
+            - claimableFunds
+            - (collateralAsset == fundsAsset ? collateral : uint256(0));
+    }
+
+    /****************************************/
+    /*** Internal Pure Readonly Functions ***/
+    /****************************************/
+
+    /**
+     *  @dev Returns the fee by applying an annualized fee rate over an interval of time.
+     */
+    function _getFee(uint256 _amount, uint256 _feeRate, uint256 _interval) internal pure returns (uint256) {
+        return _amount * _getPeriodicFeeRate(_feeRate, _interval) / uint256(1_000_000);
     }
 
     /**
-        @dev Emits a `BalanceUpdated` event for the CollateralLocker.
-        @dev It emits a `BalanceUpdated` event.
+     *  @dev Returns principal and interest fee portions of a payment, given generic loan parameters.
      */
-    function _emitBalanceUpdateEventForCollateralLocker() internal {
-        emit BalanceUpdated(collateralLocker, collateralAsset, _getCollateralLockerBalance());
+    function _getPayment(uint256 _principal, uint256 _endingPrincipal, uint256 _interestRate, uint256 _paymentInterval, uint256 _totalPayments)
+        internal pure returns (uint256 principalAmount, uint256 interestAmount)
+    {
+        uint256 periodicRate = _getPeriodicFeeRate(_interestRate, _paymentInterval);
+        uint256 raisedRate   = _scaledExponent(uint256(1_000_000) + periodicRate, _totalPayments, uint256(1_000_000));
+
+        // TODO: Check if raisedRate can be <= 1_000_000
+
+        uint256 total =
+            (
+                (
+                    (
+                        (
+                            _principal * raisedRate
+                        ) / uint256(1_000_000)
+                    ) - _endingPrincipal
+                ) * periodicRate
+            ) / (raisedRate - uint256(1_000_000));
+
+        principalAmount = total - (interestAmount = _getFee(_principal, _interestRate, _paymentInterval));
     }
 
-    function _msgSender() internal view override(PauseableContext, ERC20Context) returns (address payable) {
-        return msg.sender;
+    /**
+     *  @dev Returns principal, interest fee, and late fee portions of a payment, given generic loan parameters and conditions.
+     */
+    function _getPaymentBreakdown(
+        uint256 _paymentDate,
+        uint256 _nextPaymentDueDate,
+        uint256 _paymentInterval,
+        uint256 _principal,
+        uint256 _endingPrincipal,
+        uint256 _interestRate,
+        uint256 _paymentsRemaining,
+        uint256 _lateFeeRate
+    ) internal pure returns (uint256 principalAmount, uint256 interestFee, uint256 lateFee) {
+        // Get the expected principal and interest portions for the payment, as if it was on-time
+        (principalAmount, interestFee) = _getPayment(_principal, _endingPrincipal, _interestRate, _paymentInterval, _paymentsRemaining);
+
+        // Determine how late the payment is
+        uint256 secondsLate = _paymentDate > _nextPaymentDueDate ? _paymentDate - _nextPaymentDueDate : uint256(0);
+
+        // Accumulate the potential late fees incurred on the expected interest portion
+        lateFee = _getFee(interestFee, _lateFeeRate, secondsLate);
+
+        // Accumulate the interest and potential additional interest incurred in the late period
+        interestFee += _getFee(_principal, _interestRate, secondsLate);
     }
 
-    function _msgData() internal view override(PauseableContext, ERC20Context) returns (bytes memory) {
-        this; // silence state mutability warning without generating bytecode - see https://github.com/ethereum/solidity/issues/2691
-        return msg.data;
+    /**
+     *  @dev Returns accumulated principal, interest fee, and late fee portions of several payments, given generic loan parameters and conditions.
+     */
+    function _getPaymentsBreakdown(
+        uint256 _numberOfPayments,
+        uint256 _currentTime,
+        uint256 _nextPaymentDueDate,
+        uint256 _paymentInterval,
+        uint256 _principal,
+        uint256 _endingPrincipal,
+        uint256 _interestRate,
+        uint256 _paymentsRemaining,
+        uint256 _lateFeeRate
+    )
+        internal pure 
+        returns (uint256 totalPrincipalAmount, uint256 totalInterestFees, uint256 totalLateFees)
+    {
+        // For each payments (current and late)
+        for (; _numberOfPayments > uint256(0); --_numberOfPayments) {
+            (uint256 principalAmount, uint256 interestFee, uint256 lateFee) = _getPaymentBreakdown(
+                _currentTime,
+                _nextPaymentDueDate,
+                _paymentInterval,
+                _principal,
+                _endingPrincipal,
+                _interestRate,
+                _paymentsRemaining--,
+                _lateFeeRate
+            );
+
+            // Update local variables
+            totalPrincipalAmount += principalAmount;
+            totalInterestFees    += interestFee;
+            totalLateFees        += lateFee;
+            _nextPaymentDueDate  += _paymentInterval;
+            _principal           -= principalAmount;
+        }
+    }
+
+    /**
+     *  @dev Returns the fee rate over an interval, given an annualized fee rate.
+     */
+    function _getPeriodicFeeRate(uint256 _feeRate, uint256 _interval) internal pure returns (uint256) {
+        return (_feeRate * _interval) / uint256(365 days);
+    }
+
+    /**
+     *  @dev Returns exponentiation of a scaled base value.
+     */
+    function _scaledExponent(uint256 base, uint256 exponent, uint256 one) internal pure returns (uint256) {
+        return exponent == uint256(0) ? one : (base * _scaledExponent(base, exponent - uint256(1), one)) / one;
     }
 
 }

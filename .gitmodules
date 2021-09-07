@@ -1,12 +1,9 @@
-[submodule "modules/openzeppelin-contracts"]
-	path = modules/openzeppelin-contracts
-	url = https://github.com/OpenZeppelin/openzeppelin-contracts
+[submodule "modules/erc20"]
+	path = modules/erc20
+	url = https://github.com/maple-labs/erc20
+[submodule "modules/erc20-helper"]
+	path = modules/erc20-helper
+	url = https://github.com/maple-labs/erc20-helper
 [submodule "modules/ds-test"]
 	path = modules/ds-test
 	url = https://github.com/dapphub/ds-test
-[submodule "modules/util"]
-	path = modules/util
-	url = https://github.com/maple-labs/util
-[submodule "modules/funds-distribution-token"]
-	path = modules/funds-distribution-token
-	url = https://github.com/maple-labs/funds-distribution-token
