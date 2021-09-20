@@ -23,7 +23,7 @@ interface IMapleLoanFactory {
     event ImplementationRegistered(uint256 indexed version, address indexed implementationAddress, address indexed initializer);
 
     /**
-     *  @dev    A MapleLoan proxy contract was deployed with some initialization arguments.
+     *  @dev   A MapleLoan proxy contract was deployed with some initialization arguments.
      *  @param version                 The version of the MapleLoan implementation being proxied by the deployed MapleLoan proxy contract.
      *  @param loan                    The address of the MapleLoan proxy contract deployed.
      *  @param initializationArguments The arguments used to initialize the MapleLoan proxy contract, if any.

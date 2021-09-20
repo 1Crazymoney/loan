@@ -13,12 +13,12 @@ contract MapleLoanInitializer is IMapleLoanEvents, LoanPrimitive {
         address[2] memory assets_,
         uint256[6] memory parameters_,
         uint256[2] memory amounts_
-    ) external pure returns(bytes memory encodedArguments_) {
+    ) external pure returns (bytes memory encodedArguments_) {
         return abi.encode(borrower_, assets_, parameters_, amounts_);
     }
 
     function decodeArguments(bytes calldata encodedArguments_)
-        external pure returns(
+        external pure returns (
             address borrower_,
             address[2] memory assets_,
             uint256[6] memory parameters_,
@@ -29,7 +29,7 @@ contract MapleLoanInitializer is IMapleLoanEvents, LoanPrimitive {
     }
 
     function _decodeArguments(bytes calldata encodedArguments_)
-        internal pure returns(
+        internal pure returns (
             address borrower_,
             address[2] memory assets_,
             uint256[6] memory parameters_,
