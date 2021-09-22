@@ -137,6 +137,11 @@ contract MapleLoan is IMapleLoan, Proxied, LoanPrimitive {
         return _factory();
     }
 
+    // TODO: Investigate removing `factory()`
+    function superFactory() public view override returns (address factory_) {
+        return _factory();
+    }
+
     function getNextPaymentsBreakDown(uint256 numberOfPayments_)
         external view override
         returns (uint256 totalPrincipalAmount_, uint256 totalInterestFees_, uint256 totalLateFees_)
@@ -191,6 +196,11 @@ contract MapleLoan is IMapleLoan, Proxied, LoanPrimitive {
     }
 
     function fundsAsset() external view override returns (address fundsAsset_) {
+        return _fundsAsset;
+    }
+
+    // TODO: Remove this once new DebtLocker is in place
+    function liquidityAsset() external view returns (address fundsAsset_) {
         return _fundsAsset;
     }
 

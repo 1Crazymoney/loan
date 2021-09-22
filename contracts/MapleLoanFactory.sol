@@ -15,6 +15,7 @@ contract MapleLoanFactory is IMapleLoanFactory, ProxyFactory {
     uint256 public override defaultVersion;
     uint256 public override loanCount;
 
+    mapping(address => bool)    public override isLoan;  // TODO: add interface
     mapping(uint256 => address) public override loanAtIndex;
     mapping(address => uint256) public override nonceOf;
 
@@ -77,6 +78,8 @@ contract MapleLoanFactory is IMapleLoanFactory, ProxyFactory {
         bool success_;
         ( success_, loan_ ) = _newInstanceWithSalt(defaultVersion, arguments_, keccak256(abi.encodePacked(msg.sender, nonceOf[msg.sender]++)));
         require(success_, "MLF:CL:FAILED");
+
+        isLoan[loan_] = true;
 
         emit LoanDeployed(defaultVersion, loanAtIndex[loanCount++] = loan_, arguments_);
     }

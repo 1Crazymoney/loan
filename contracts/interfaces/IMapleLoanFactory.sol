@@ -64,6 +64,11 @@ interface IMapleLoanFactory {
     function defaultVersion() external view returns (uint256 defaultVersion_);
 
     /**
+     *  @dev Returns a boolean indicating if a Loan was deployed from this factory.
+     */
+    function isLoan(address loan_) external view returns (bool isLoan_);
+
+    /**
      *  @dev The current number of loans created using the factory.
      */
     function loanCount() external view returns (uint256 loanCount_);
