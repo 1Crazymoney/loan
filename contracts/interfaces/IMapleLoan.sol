@@ -101,7 +101,7 @@ interface IMapleLoan is IProxied, IMapleLoanEvents {
     /**
      *  @dev Returns address of factory that deployed the loan.
      */
-    function superFactory() external view returns (uint256 superFactory_);
+    function superFactory() external view returns (address superFactory_);
 
     /********************************/
     /*** State Changing Functions ***/
