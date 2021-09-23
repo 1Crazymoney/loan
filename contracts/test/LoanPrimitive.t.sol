@@ -312,30 +312,30 @@ contract LoanPrimitiveInstallmentTest is DSTest {
     }
 
     function test_getInstallment_highInterest(uint principalAmount_, uint256 endingAmount_, uint256 paymentInterval_, uint256 numberOfPayments_) external view {
-        principalAmount_  = _constrictToRange(principalAmount_, MIN_TOKEN_AMOUNT, MAX_TOKEN_AMOUNT);
-        endingAmount_     = _constrictToRange(endingAmount_,     0,               principalAmount_);
-        paymentInterval_  = _constrictToRange(paymentInterval_,  1 days,          90 days);
-        numberOfPayments_ = _constrictToRange(numberOfPayments_, 1,               10);
+        principalAmount_  = _constrictToRange(principalAmount_,  MIN_TOKEN_AMOUNT, MAX_TOKEN_AMOUNT);
+        endingAmount_     = _constrictToRange(endingAmount_,     0,                principalAmount_);
+        paymentInterval_  = _constrictToRange(paymentInterval_,  1 days,           90 days);
+        numberOfPayments_ = _constrictToRange(numberOfPayments_, 1,                10);
 
         // Interest rate of 1000%
         loan.getInstallment(principalAmount_, endingAmount_, 1000 * 10_000, paymentInterval_, numberOfPayments_);
     }
 
     function test_getInstallment_largeInterval(uint principalAmount_, uint256 endingAmount_, uint256 interestRate_, uint256 numberOfPayments_) external view {
-        principalAmount_  = _constrictToRange(principalAmount_, MIN_TOKEN_AMOUNT, MAX_TOKEN_AMOUNT);
-        endingAmount_     = _constrictToRange(endingAmount_,     0,               principalAmount_);
-        interestRate_     = _constrictToRange(interestRate_,     10_000,          100 * 10_000);
-        numberOfPayments_ = _constrictToRange(numberOfPayments_, 1,               10);
+        principalAmount_  = _constrictToRange(principalAmount_,  MIN_TOKEN_AMOUNT, MAX_TOKEN_AMOUNT);
+        endingAmount_     = _constrictToRange(endingAmount_,     0,                principalAmount_);
+        interestRate_     = _constrictToRange(interestRate_,     10_000,           100 * 10_000);
+        numberOfPayments_ = _constrictToRange(numberOfPayments_, 1,                10);
 
         // One payment every 10 years
         loan.getInstallment(principalAmount_, endingAmount_, interestRate_, 10 * 365 days, numberOfPayments_);
     }
 
     function test_getInstallment_largeNumberOfPayments(uint principalAmount_, uint256 endingAmount_, uint256 interestRate_, uint256 paymentInterval_) external view {
-        principalAmount_  = _constrictToRange(principalAmount_, MIN_TOKEN_AMOUNT, MAX_TOKEN_AMOUNT);
-        endingAmount_     = _constrictToRange(endingAmount_,     0,               principalAmount_);
-        interestRate_     = _constrictToRange(interestRate_,     10_000,          100 * 10_000);
-        paymentInterval_  = _constrictToRange(paymentInterval_,  1 days,          90 days);
+        principalAmount_  = _constrictToRange(principalAmount_,  MIN_TOKEN_AMOUNT, MAX_TOKEN_AMOUNT);
+        endingAmount_     = _constrictToRange(endingAmount_,     0,                principalAmount_);
+        interestRate_     = _constrictToRange(interestRate_,     10_000,           100 * 10_000);
+        paymentInterval_  = _constrictToRange(paymentInterval_,  1 days,           90 days);
 
         // Paying 100 parcels at once
         loan.getInstallment(principalAmount_, endingAmount_, interestRate_, paymentInterval_, 100);
