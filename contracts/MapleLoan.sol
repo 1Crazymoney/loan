@@ -11,6 +11,9 @@ import { LoanPrimitive } from "./LoanPrimitive.sol";
 /// @title MapleLoan implements a primitive loan with additional functionality, and is intended to be proxied.
 contract MapleLoan is IMapleLoan, Proxied, LoanPrimitive {
 
+    //Refinance storage needed
+    bytes32 public newTermsHash;
+
     /********************************/
     /*** Administrative Functions ***/
     /********************************/
@@ -97,6 +100,32 @@ contract MapleLoan is IMapleLoan, Proxied, LoanPrimitive {
         ( , fundsAssetAmount_ )      = _skim(_fundsAsset,      fundsAssetDestination_);
 
         emit Repossessed(collateralAssetAmount_, fundsAssetAmount_);
+    }
+
+    /***************************/
+    /*** Refinance Functions ***/
+    /***************************/
+
+    function proposeNewTerms(address[2] calldata assets_, uint256[13] calldata terms_) external override {
+        require(msg.sender == _borrower, "ML:PNT:NOT_BORROWER");
+
+        newTermsHash = keccak256(abi.encode(assets_, terms_));
+    }
+
+    function acceptNewTerms(address[2] calldata assets_, uint256[13] calldata terms_) external override {
+        require(msg.sender == _lender,                                    "ML:ANT:NOT_LENDER");
+        require(keccak256(abi.encode(assets_, terms_)) == newTermsHash, "ML:ANT:MISMATCHED_TERMS");
+
+        // Check unnacounted amount before changing active terms
+        uint256 extraFunds = _getUnaccountedAmount(_fundsAsset);
+
+        // If the new terms involves more funds, lender must send here beforehand. This is not the best way to check that the contract has necessary funds for refinance
+        require(_drawableFunds + extraFunds == terms_[7]);
+        require(_principal     + extraFunds == terms_[12]);
+
+        _modifyTerms(assets_, terms_);
+        
+        require(_collateralMaintained(), "ML:ANT:COLLATERAL_NOT_MAINTAINED"); // If refinance requires more prinpical or collateral, this will enforce that both are presnt according to new terms
     }
 
     /*************************/

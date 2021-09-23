@@ -103,6 +103,11 @@ interface IMapleLoan is IProxied, IMapleLoanEvents {
     /********************************/
 
     /**
+     *  @dev    Accept new terms for loan contract
+     */
+    function  acceptNewTerms(address[2] calldata assets_, uint256[13] calldata terms_) external;
+
+    /**
      *  @dev   Claim funds that have been paid (principal, interest, and late fees).
      *  @param amount_      The amount to be claimed.
      *  @param destination_ The address to send the funds.
@@ -149,6 +154,11 @@ interface IMapleLoan is IProxied, IMapleLoanEvents {
      *  @return amount_ The amount posted.
      */
     function postCollateral() external returns (uint256 amount_);
+
+    /**
+     *  @dev    Propose new terms for loan contract
+     */
+    function proposeNewTerms(address[2] calldata assets_, uint256[13] calldata terms_) external;
 
     /**
      *  @dev   Remove collateral from the loan (opposite of posting collateral).

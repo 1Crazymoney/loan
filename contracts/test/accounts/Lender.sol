@@ -11,6 +11,10 @@ contract Lender is LoanUser {
     /*** Direct Functions ***/
     /************************/
 
+    function loan_acceptNewTerms(address loan_, address[2] calldata _assets, uint256[13] calldata terms_) external {
+        IMapleLoan(loan_).acceptNewTerms(_assets, terms_);
+    }
+
     function loan_claimFunds(address loan_, uint256 amount_, address destination_) external {
         IMapleLoan(loan_).claimFunds(amount_, destination_);
     }

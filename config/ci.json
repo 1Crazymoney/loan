@@ -18,6 +18,9 @@
         },
         "contracts/test/MapleLoanStories.t.sol": {
             "urls": ["contracts/test/MapleLoanStories.t.sol"]
+        },
+        "contracts/test/RefinanceStories.t.sol": {
+            "urls": ["contracts/test/RefinanceStories.t.sol"]
         }
     },
     "settings": {

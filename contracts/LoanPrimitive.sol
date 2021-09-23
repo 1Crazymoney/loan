@@ -177,6 +177,28 @@ contract LoanPrimitive {
         return true;
     }
 
+    function _modifyTerms(address[2] memory assets_, uint256[13] memory terms_) internal virtual returns (bool success_){
+        // Modify assets
+        _collateralAsset = assets_[1];
+
+        // Modify terms
+        _endingPrincipal    = terms_[0];  
+        _gracePeriod        = terms_[1];      
+        _interestRate       = terms_[2];     
+        _lateFeeRate        = terms_[3];      
+        _paymentInterval    = terms_[4];  
+        _collateralRequired = terms_[5];  
+        _principalRequested = terms_[6];  
+        _drawableFunds      = terms_[7];       
+        _claimableFunds     = terms_[8];      
+        _collateral         = terms_[9];          
+        _nextPaymentDueDate = terms_[10];  
+        _paymentsRemaining  = terms_[11];   
+        _principal          = terms_[12];
+
+        return true;
+    }
+
     /*******************************/
     /*** Internal View Functions ***/
     /*******************************/

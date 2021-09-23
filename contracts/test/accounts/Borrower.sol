@@ -24,6 +24,10 @@ contract Borrower is LoanUser {
         IMapleLoan(loan_).upgrade(toVersion_, arguments_);
     }
 
+    function loan_proposeNewTerms(address loan_, address[2] calldata assets_, uint256[13] calldata terms_) external {
+        IMapleLoan(loan_).proposeNewTerms(assets_, terms_);
+    }
+
     function mapleLoanFactory_createLoan(address factory_, bytes calldata arguments_) external returns (address loan_) {
         return IMapleLoanFactory(factory_).createLoan(arguments_);
     }
