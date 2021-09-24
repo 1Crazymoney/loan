@@ -4,6 +4,9 @@
         "contracts/MapleLoan.sol": {
             "urls": ["contracts/MapleLoan.sol"]
         },
+        "contracts/MapleLoan_2.sol": {
+            "urls": ["contracts/MapleLoan_2.sol"]
+        },
         "contracts/MapleLoanFactory.sol": {
             "urls": ["contracts/MapleLoanFactory.sol"]
         },
@@ -20,9 +23,10 @@
             "urls": ["contracts/test/MapleLoanStories.t.sol"]
         },
         "contracts/test/RefinanceStories.t.sol": {
-            "urls": [
-                "contracts/test/RefinanceStories.t.sol"
-            ]
+            "urls": ["contracts/test/RefinanceStories.t.sol"]
+        },
+        "contracts/test/RefinanceStories_2.t.sol": {
+            "urls": ["contracts/test/RefinanceStories_2.t.sol"]
         }
     },
     "settings": {

@@ -162,3 +162,30 @@ contract RefinanceTest is DSTest {
 
     
 }
+
+// Inheriting just a lazy way to get the correct storage
+contract Simple_Refinancer is MapleLoan {
+    
+    uint256 internal constant new_interestRate = 10_000;     // The annualized interest rate of the loan.
+    uint256 internal constant new_collateralRequired = 500_000;  // The collateral the borrower is expected to put up to draw down all _principalRequested.
+    uint256 internal constant new_principalRequested = 2_000_000;  // The funds the borrowers wants to borrower.
+    uint256 internal constant new_drawableFunds = 1_000_0000;       // The amount of funds that can be drawn down.
+    uint256 internal constant new_claimableFunds = 0;      // The amount of funds that the lender can claim (principal repayments, interest fees, and late fees).
+    uint256 internal constant new_collateral = 300_000;          // The amount of collateral, in collateral asset, that is currently posted.
+    uint256 internal constant new_paymentsRemaining = 24;   // The number of payment remaining.
+    uint256 internal constant new_principal = 1_000_000; 
+
+    fallback() external {
+        _interestRate = new_interestRate;     // The annualized interest rate of the loan.
+        _collateralRequired = new_collateralRequired;  // The collateral the borrower is expected to put up to draw down all _principalRequested.
+        _principalRequested = new_principalRequested;  // The funds the borrowers wants to borrower.
+        _drawableFunds = new_drawableFunds;       // The amount of funds that can be drawn down.
+        _claimableFunds = new_claimableFunds;      // The amount of funds that the lender can claim (principal repayments, interest fees, and late fees).
+        _collateral = new_collateral;          // The amount of collateral, in collateral asset, that is currently posted.
+        _paymentsRemaining = new_paymentsRemaining;   // The number of payment remaining.
+        _principal = new_principal;
+
+        require(_collateralMaintained(), "ML:ANT:COLLATERAL_NOT_MAINTAINED");
+
+    }
+}
