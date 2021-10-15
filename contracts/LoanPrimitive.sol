@@ -199,7 +199,7 @@ contract LoanPrimitive {
 
     /// @dev Returns whether the amount of collateral posted is commensurate with the amount of drawn down (outstanding) principal.
     function _isCollateralMaintained() internal view returns (bool isMaintained_) {
-        return _collateral >= _getCollateralFor(_principal, _drawableFunds, _principalRequested, _collateralRequired);
+        return _collateral >= _getCollateralRequiredFor(_principal, _drawableFunds, _principalRequested, _collateralRequired);
     }
 
     /*******************************/
@@ -207,7 +207,7 @@ contract LoanPrimitive {
     /*******************************/
 
     /// @dev Returns the collateral to be posted for some drawn down (outstanding) principal and overall collateral ratio requirement.
-    function _getCollateralFor(
+    function _getCollateralRequiredFor(
         uint256 principal_,
         uint256 drawableFunds_,
         uint256 principalRequested_,

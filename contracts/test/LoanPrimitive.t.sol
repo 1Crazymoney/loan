@@ -1368,21 +1368,21 @@ contract LoanPrimitiveGetCollateralForTest is TestUtils {
         loan = new LoanPrimitiveHarness();
     }
 
-    function test_getCollateralFor() external {
+    function test_getCollateralRequiredFor() external {
         // No principal.
-        assertEq(loan.getCollateralFor(0, 10_000, 4_000_000, 500_000), 0);
+        assertEq(loan.getCollateralRequiredFor(0, 10_000, 4_000_000, 500_000), 0);
 
         // No outstanding principal.
-        assertEq(loan.getCollateralFor(10_000, 10_000, 4_000_000, 500_000), 0);
+        assertEq(loan.getCollateralRequiredFor(10_000, 10_000, 4_000_000, 500_000), 0);
 
         // No collateral required.
-        assertEq(loan.getCollateralFor(10_000, 1_000, 4_000_000, 0), 0);
+        assertEq(loan.getCollateralRequiredFor(10_000, 1_000, 4_000_000, 0), 0);
 
         // 1125 = (500_000 * (10_000 > 1_000 ? 10_000 - 1_000 : 0)) / 4_000_000;
-        assertEq(loan.getCollateralFor(10_000, 1_000, 4_000_000, 500_000), 1125);
+        assertEq(loan.getCollateralRequiredFor(10_000, 1_000, 4_000_000, 500_000), 1125);
 
         // 500_000 = (500_000 * (4_500_000 > 500_000 ? 4_500_000 - 500_000 : 0)) / 4_000_000;
-        assertEq(loan.getCollateralFor(4_500_000, 500_000, 4_000_000, 500_000), 500_000);
+        assertEq(loan.getCollateralRequiredFor(4_500_000, 500_000, 4_000_000, 500_000), 500_000);
     }
 
 }

@@ -148,7 +148,7 @@ contract LoanPrimitiveHarness is LoanPrimitive {
     /*** Pure Functions ****/
     /***********************/
 
-    function getCollateralFor(
+    function getCollateralRequiredFor(
         uint256 principal_,
         uint256 drawableFunds_,
         uint256 principalRequested_,
@@ -156,7 +156,7 @@ contract LoanPrimitiveHarness is LoanPrimitive {
     )
         external pure returns (uint256 collateral_)
     {
-        return _getCollateralFor(principal_, drawableFunds_, principalRequested_, collateralRequired_);
+        return _getCollateralRequiredFor(principal_, drawableFunds_, principalRequested_, collateralRequired_);
     }
 
     function getInterest(uint256 principal_, uint256 interestRate_, uint256 interval_) external pure returns (uint256 interest_) {

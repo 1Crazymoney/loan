@@ -164,7 +164,7 @@ contract MapleLoan is IMapleLoan, MapleLoanInternals {
     }
 
     function getAdditionalRequiredCollateral(uint256 drawdownAmount_) external view override returns (uint256 additionalRequiredCollateral_) {
-        uint256 newCollateralRequired = _getCollateralFor(_principal, _drawableFunds - drawdownAmount_, _principalRequested, _collateralRequired);
+        uint256 newCollateralRequired = _getCollateralRequiredFor(_principal, _drawableFunds - drawdownAmount_, _principalRequested, _collateralRequired);
         return newCollateralRequired > _collateral ? newCollateralRequired - _collateral : uint256(0);
     }
 
@@ -185,7 +185,7 @@ contract MapleLoan is IMapleLoan, MapleLoanInternals {
     }
 
     function getRemovableCollateral() external view override returns (uint256 removableCollateral_) {
-        uint256 currentCollateralRequired = _getCollateralFor(_principal, _drawableFunds, _principalRequested, _collateralRequired);
+        uint256 currentCollateralRequired = _getCollateralRequiredFor(_principal, _drawableFunds, _principalRequested, _collateralRequired);
         return _collateral > currentCollateralRequired ? _collateral - currentCollateralRequired : uint256(0);
     }
 
