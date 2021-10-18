@@ -34,6 +34,18 @@ contract ConstructableMapleLoan is MapleLoan {
         return _getCollateralRequiredFor(principal_, drawableFunds_, principalRequested_, collateralRequired_);
     }
 
+    function getNextPaymentsBreakDownWithFee(uint256 numberOfPayments_)
+        external view
+        returns (
+            uint256 principal_,
+            uint256 interest_,
+            uint256 adminFee_,
+            uint256 serviceFee_
+        )
+    {
+        ( principal_, interest_, adminFee_, serviceFee_ ) = _getNextPaymentsBreakDown(numberOfPayments_);
+    }
+
 }
 
 contract LenderMock is Lender {
