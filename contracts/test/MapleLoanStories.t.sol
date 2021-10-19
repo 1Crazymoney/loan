@@ -141,7 +141,8 @@ contract MapleLoanTest is StateManipulations, TestUtils {
             uint256[3] memory amounts = [uint256(300_000), uint256(1_000_000), uint256(0)];
             uint256[4] memory fees    = [uint256(0), uint256(0), uint256(0), uint256(0)];
 
-            loan = new ConstructableMapleLoan(address(borrower), assets, parameters, amounts, fees);
+            loan      = new ConstructableMapleLoan(address(borrower), assets, parameters, amounts, fees);
+
             loanState = createDefaultState(address(borrower), parameters, amounts, fees, assets);
         }
 
@@ -156,16 +157,16 @@ contract MapleLoanTest is StateManipulations, TestUtils {
         assertTrue(lender.try_loan_fundLoan(address(loan), address(lender), 500_000), "Cannot lend");
 
         {   
-            LoanState memory updatedState = updateLoanState(
-                    loanState,
-                    uint256(0),
-                    uint256(0),
-                    1_000_000 - getTotalFees(1_000_000, lender, mockLoan),
-                    address(lender),
-                    block.timestamp + mockLoan.paymentInterval(),
-                    1_000_000,
-                    mockLoan.paymentsRemaining()
-            );
+            LoanState memory updatedState = updateLoanState({
+                    state_:              loanState,
+                    claimableFunds_:     uint256(0),
+                    collateral_:         uint256(0),
+                    drawableFunds_:      1_000_000 - getTotalFees(1_000_000, lender, mockLoan),
+                    lender_:             address(lender),
+                    nextPaymentDueDate_: block.timestamp + mockLoan.paymentInterval(),
+                    principal_:          1_000_000,
+                    paymentsRemaining_:  mockLoan.paymentsRemaining()
+            });
             assert_loan_state(mockLoan, updatedState);
         }
 
@@ -174,32 +175,32 @@ contract MapleLoanTest is StateManipulations, TestUtils {
         assertTrue(borrower.try_loan_postCollateral(address(loan)), "Cannot post");
 
         {   
-            LoanState memory updatedState = updateLoanState(
-                    loanState,
-                    uint256(0),
-                    300_000,
-                    1_000_000 - getTotalFees(1_000_000, lender, mockLoan),
-                    address(lender),
-                    block.timestamp + mockLoan.paymentInterval(),
-                    1_000_000,
-                    mockLoan.paymentsRemaining()
-            );
+            LoanState memory updatedState = updateLoanState({
+                    state_:              loanState,
+                    claimableFunds_:     uint256(0),
+                    collateral_:         300_000,
+                    drawableFunds_:      1_000_000 - getTotalFees(1_000_000, lender, mockLoan),
+                    lender_:             address(lender),
+                    nextPaymentDueDate_: block.timestamp + mockLoan.paymentInterval(),
+                    principal_:          1_000_000,
+                    paymentsRemaining_:  mockLoan.paymentsRemaining()
+            });
             assert_loan_state(mockLoan, updatedState);
         }
 
         assertTrue(borrower.try_loan_drawdownFunds(address(loan), 1_000_000, address(borrower)), "Cannot drawdown");
 
-        {   
-            LoanState memory updatedState = updateLoanState(
-                    loanState,
-                    uint256(0),
-                    300_000,
-                    uint256(0),
-                    address(lender),
-                    block.timestamp + mockLoan.paymentInterval(),
-                    1_000_000,
-                    mockLoan.paymentsRemaining()
-            );
+        { 
+            LoanState memory updatedState = updateLoanState({
+                    state_:              loanState,
+                    claimableFunds_:     uint256(0),
+                    collateral_:         300_000,
+                    drawableFunds_:      uint256(0),
+                    lender_:             address(lender),
+                    nextPaymentDueDate_: block.timestamp + mockLoan.paymentInterval(),
+                    principal_:          1_000_000,
+                    paymentsRemaining_:  mockLoan.paymentsRemaining()
+            });
             assert_loan_state(mockLoan, updatedState);
         }
 
@@ -227,16 +228,16 @@ contract MapleLoanTest is StateManipulations, TestUtils {
 
             serviceFee = principalPortion + interestPortion + serviceFee - adminFee;
 
-            LoanState memory updatedState = updateLoanState(
-                    loanState,
-                    serviceFee,
-                    300_000,
-                    1,
-                    lender_,
-                    currentNextPaymentDueDate = currentNextPaymentDueDate + mockLoan.paymentInterval() * 1,
-                    1_000_000 - principalPortion,
-                    5
-            );
+            LoanState memory updatedState = updateLoanState({
+                    state_:              loanState,
+                    claimableFunds_:     serviceFee,
+                    collateral_:         300_000,
+                    drawableFunds_:      uint256(1),
+                    lender_:             lender_,
+                    nextPaymentDueDate_: currentNextPaymentDueDate = currentNextPaymentDueDate + mockLoan.paymentInterval() * 1,
+                    principal_:          1_000_000 - principalPortion,
+                    paymentsRemaining_:  5
+            });
             assert_loan_state(mockLoan, updatedState);
         }
 
@@ -262,16 +263,16 @@ contract MapleLoanTest is StateManipulations, TestUtils {
             
             serviceFee = principalPortion + interestPortion + serviceFee - adminFee;
 
-            LoanState memory updatedState = updateLoanState(
-                    loanState,
-                    178_525 + serviceFee,
-                    300_000,
-                    uint256(2),
-                    lender_,
-                    currentNextPaymentDueDate = currentNextPaymentDueDate + mockLoan.paymentInterval() * 1,
-                    841_475 - principalPortion,
-                    4
-            );
+            LoanState memory updatedState = updateLoanState({
+                    state_:              loanState,
+                    claimableFunds_:     178_525 + serviceFee,
+                    collateral_:         300_000,
+                    drawableFunds_:      uint256(2),
+                    lender_:             lender_,
+                    nextPaymentDueDate_: currentNextPaymentDueDate = currentNextPaymentDueDate + mockLoan.paymentInterval() * 1,
+                    principal_:          841_475 - principalPortion,
+                    paymentsRemaining_:  4
+            });
             assert_loan_state(mockLoan, updatedState);
         }
 
@@ -300,16 +301,16 @@ contract MapleLoanTest is StateManipulations, TestUtils {
         
             serviceFee = principalPortion + interestPortion + serviceFee - adminFee;
 
-            LoanState memory updatedState = updateLoanState(
-                    loanState,
-                    178_525 + 178_525 + serviceFee,
-                    154_455,
-                    uint256(2),
-                    lender_,
-                    currentNextPaymentDueDate = currentNextPaymentDueDate + mockLoan.paymentInterval() * 1,
-                    679_779 - principalPortion,
-                    3
-            );
+            LoanState memory updatedState = updateLoanState({
+                    state_:              loanState,
+                    claimableFunds_:     178_525 + 178_525 + serviceFee,
+                    collateral_:         154_455,
+                    drawableFunds_:      uint256(2),
+                    lender_:             lender_,
+                    nextPaymentDueDate_: currentNextPaymentDueDate = currentNextPaymentDueDate + mockLoan.paymentInterval() * 1,
+                    principal_:          679_779 - principalPortion,
+                    paymentsRemaining_:  3
+            });
             assert_loan_state(mockLoan, updatedState);
         }
 
@@ -346,17 +347,17 @@ contract MapleLoanTest is StateManipulations, TestUtils {
 
         {   
             address lender_ = address(lender);
-            
-            LoanState memory updatedState = updateLoanState(
-                    loanState,
-                    uint256(0),
-                    69_396,
-                    150_001,
-                    lender_,
-                    currentNextPaymentDueDate = currentNextPaymentDueDate + mockLoan.paymentInterval() * 1,
-                    514_849 - principalPortion,
-                    2
-            );
+    
+            LoanState memory updatedState = updateLoanState({
+                    state_:              loanState,
+                    claimableFunds_:     uint256(0),
+                    collateral_:         69_396,
+                    drawableFunds_:      150_001,
+                    lender_:             lender_,
+                    nextPaymentDueDate_: currentNextPaymentDueDate = currentNextPaymentDueDate + mockLoan.paymentInterval() * 1,
+                    principal_:          514_849 - principalPortion,
+                    paymentsRemaining_:  2
+            });
             assert_loan_state(mockLoan, updatedState);
         }
 
@@ -381,17 +382,17 @@ contract MapleLoanTest is StateManipulations, TestUtils {
             address lender_ = address(lender);
 
             serviceFee = principalPortion + interestPortion + serviceFee - adminFee;
-
-            LoanState memory updatedState = updateLoanState(
-                    loanState,
-                    serviceFee,
-                    69_396,
-                    150_001,
-                    lender_,
-                    currentNextPaymentDueDate = currentNextPaymentDueDate + mockLoan.paymentInterval() * 1,
-                    346_619 - principalPortion,
-                    1
-            );
+            
+            LoanState memory updatedState = updateLoanState({
+                    state_:              loanState,
+                    claimableFunds_:     serviceFee,
+                    collateral_:         69_396,
+                    drawableFunds_:      150_001,
+                    lender_:             lender_,
+                    nextPaymentDueDate_: currentNextPaymentDueDate = currentNextPaymentDueDate + mockLoan.paymentInterval() * 1,
+                    principal_:          346_619 - principalPortion,
+                    paymentsRemaining_:  1
+            });
             assert_loan_state(mockLoan, updatedState);
         }
 
@@ -417,16 +418,16 @@ contract MapleLoanTest is StateManipulations, TestUtils {
 
             serviceFee = principalPortion + interestPortion + serviceFee - adminFee;
 
-            LoanState memory updatedState = updateLoanState(
-                    loanState,
-                    178_525 + serviceFee,
-                    69_396,
-                    150_000,
-                    lender_,
-                    currentNextPaymentDueDate = currentNextPaymentDueDate + mockLoan.paymentInterval() * 1,
-                    175_026 - principalPortion,
-                    0
-            );
+            LoanState memory updatedState = updateLoanState({
+                    state_:              loanState,
+                    claimableFunds_:     178_525 + serviceFee,
+                    collateral_:         69_396,
+                    drawableFunds_:      150_000,
+                    lender_:             lender_,
+                    nextPaymentDueDate_: currentNextPaymentDueDate = currentNextPaymentDueDate + mockLoan.paymentInterval() * 1,
+                    principal_:          175_026 - principalPortion,
+                    paymentsRemaining_:  0
+            });
             assert_loan_state(mockLoan, updatedState);
         }
 
@@ -448,27 +449,50 @@ contract MapleLoanTest is StateManipulations, TestUtils {
         token.mint(address(borrower), 1_000_000);
         token.mint(address(lender),   1_000_000);
 
-        address[2] memory assets = [address(token), address(token)];
+        ConstructableMapleLoan loan;
+        LoanState memory loanState;
 
-        uint256[6] memory parameters = [
-            uint256(10 days),
-            uint256(365 days / 6),
-            uint256(6),
-            uint256(0.12 ether),
-            uint256(0.10 ether),
-            uint256(0 ether)
-        ];
+        {
+            address[2] memory assets = [address(token), address(token)];
 
-        uint256[3] memory amounts = [uint256(300_000), uint256(1_000_000), uint256(1_000_000)];
-        uint256[4] memory fees    = [uint256(0), uint256(0), uint256(0), uint256(0)];
+            uint256[6] memory parameters = [
+                uint256(10 days),
+                uint256(365 days / 6),
+                uint256(6),
+                uint256(0.12 ether),
+                uint256(0.10 ether),
+                uint256(0 ether)
+            ];
 
-        ConstructableMapleLoan loan = new ConstructableMapleLoan(address(borrower), assets, parameters, amounts, fees);
+            uint256[3] memory amounts = [uint256(300_000), uint256(1_000_000), uint256(1_000_000)];
+            uint256[4] memory fees    = [uint256(0), uint256(0), uint256(0), uint256(0)];
+
+            loan = new ConstructableMapleLoan(address(borrower), assets, parameters, amounts, fees);
+
+            loanState = createDefaultState(address(borrower), parameters, amounts, fees, assets);
+        }
+
+        IMapleLoan mockLoan = IMapleLoan(address(loan));
 
         // Fund via a 500k approval and a 500k transfer, totaling 1M
         lender.erc20_transfer(address(token), address(loan), 500_000);
         lender.erc20_approve(address(token), address(loan),  500_000);
 
         assertTrue(lender.try_loan_fundLoan(address(loan), address(lender), 500_000), "Cannot lend");
+
+        {   
+            LoanState memory updatedState = updateLoanState({
+                    state_:              loanState,
+                    claimableFunds_:     uint256(0),
+                    collateral_:         uint256(0),
+                    drawableFunds_:      1_000_000 - getTotalFees(1_000_000, lender, mockLoan),
+                    lender_:             address(lender),
+                    nextPaymentDueDate_: block.timestamp + mockLoan.paymentInterval(),
+                    principal_:          1_000_000,
+                    paymentsRemaining_:  mockLoan.paymentsRemaining()
+            });
+            assert_loan_state(mockLoan, updatedState);
+        }
 
         assertEq(loan.drawableFunds(), 1_000_000, "Different drawable funds");
 
@@ -477,7 +501,19 @@ contract MapleLoanTest is StateManipulations, TestUtils {
         assertTrue(borrower.try_loan_postCollateral(address(loan)),                              "Cannot post");
         assertTrue(borrower.try_loan_drawdownFunds(address(loan), 1_000_000, address(borrower)), "Cannot drawdown");
 
-        assertEq(loan.drawableFunds(), 0, "Different drawable funds");
+        {   
+            LoanState memory updatedState = updateLoanState({
+                    state_:              loanState,
+                    claimableFunds_:     uint256(0),
+                    collateral_:         300_000,
+                    drawableFunds_:      uint256(0),
+                    lender_:             address(lender),
+                    nextPaymentDueDate_: block.timestamp + mockLoan.paymentInterval(),
+                    principal_:          1_000_000,
+                    paymentsRemaining_:  mockLoan.paymentsRemaining()
+            });
+            assert_loan_state(mockLoan, updatedState);
+        }
 
         // Check details for upcoming payment #1
         ( uint256 principalPortion, uint256 interestPortion, uint256 lateFeesPortion ) = loan.getNextPaymentsBreakDown(1);
@@ -496,6 +532,22 @@ contract MapleLoanTest is StateManipulations, TestUtils {
 
         assertTrue(borrower.try_loan_makePayment(address(loan)), "Cannot pay");
 
+        {   
+            LoanState memory updatedState = updateLoanState({
+                    state_:              loanState,
+                    claimableFunds_:     principalPortion + interestPortion,
+                    collateral_:         300_000,
+                    drawableFunds_:      uint256(0),
+                    lender_:             address(lender),
+                    nextPaymentDueDate_: block.timestamp + mockLoan.paymentInterval() + 1,  // that get subtracted above during wrap
+                    principal_:          1_000_000,
+                    paymentsRemaining_:  5
+            });
+            assert_loan_state(mockLoan, updatedState);
+        }
+        
+        uint256 currentNextPaymentDueDate = mockLoan.nextPaymentDueDate();
+
         // Check details for upcoming payment #2
         ( principalPortion, interestPortion, lateFeesPortion ) = loan.getNextPaymentsBreakDown(1);
 
@@ -513,6 +565,20 @@ contract MapleLoanTest is StateManipulations, TestUtils {
 
         assertTrue(borrower.try_loan_makePayment(address(loan)), "Cannot pay");
 
+        {   
+            LoanState memory updatedState = updateLoanState({
+                    state_:              loanState,
+                    claimableFunds_:     20_000 + principalPortion + interestPortion,
+                    collateral_:         300_000,
+                    drawableFunds_:      uint256(0),
+                    lender_:             address(lender),
+                    nextPaymentDueDate_: currentNextPaymentDueDate = currentNextPaymentDueDate + mockLoan.paymentInterval() * 1,
+                    principal_:          1_000_000,
+                    paymentsRemaining_:  4
+            });
+            assert_loan_state(mockLoan, updatedState);
+        }
+
         // Check details for upcoming payment #3
         ( principalPortion, interestPortion, lateFeesPortion ) = loan.getNextPaymentsBreakDown(1);
 
@@ -529,6 +595,20 @@ contract MapleLoanTest is StateManipulations, TestUtils {
         borrower.erc20_transfer(address(token), address(loan), 20_000);
 
         assertTrue(borrower.try_loan_makePayment(address(loan)), "Cannot pay");
+
+        {   
+            LoanState memory updatedState = updateLoanState({
+                    state_:              loanState,
+                    claimableFunds_:     20_000 + 20_000 + principalPortion + interestPortion,
+                    collateral_:         300_000,
+                    drawableFunds_:      uint256(0),
+                    lender_:             address(lender),
+                    nextPaymentDueDate_: currentNextPaymentDueDate = currentNextPaymentDueDate + mockLoan.paymentInterval() * 1,
+                    principal_:          1_000_000,
+                    paymentsRemaining_:  3
+            });
+            assert_loan_state(mockLoan, updatedState);
+        }
 
         // Check details for upcoming payment #4
         ( principalPortion, interestPortion, lateFeesPortion ) = loan.getNextPaymentsBreakDown(1);
@@ -551,15 +631,24 @@ contract MapleLoanTest is StateManipulations, TestUtils {
         borrower.erc20_transfer(address(token), address(loan), 500_000);
 
         assertTrue(borrower.try_loan_returnFunds(address(loan)), "Cannot return funds");
-
-        assertEq(loan.drawableFunds(), 500_000, "Different drawable funds");
-
         assertTrue(borrower.try_loan_removeCollateral(address(loan), 150_000, address(borrower)), "Cannot remove collateral");
-
-        assertEq(loan.collateral(), 150_000, "Different collateral");
 
         // Claim loan proceeds thus far
         assertTrue(lender.try_loan_claimFunds(address(loan), 80000, address(lender)), "Cannot claim funds");
+
+        {   
+            LoanState memory updatedState = updateLoanState({
+                    state_:              loanState,
+                    claimableFunds_:     20_000 + 20_000 + 20_000 + principalPortion + interestPortion - 80000,
+                    collateral_:         150_000,
+                    drawableFunds_:      500_000,
+                    lender_:             address(lender),
+                    nextPaymentDueDate_: currentNextPaymentDueDate = currentNextPaymentDueDate + mockLoan.paymentInterval() * 1,
+                    principal_:          1_000_000,
+                    paymentsRemaining_:  2
+            });
+            assert_loan_state(mockLoan, updatedState);
+        }
 
         // Check details for upcoming payment #5
         ( principalPortion, interestPortion, lateFeesPortion ) = loan.getNextPaymentsBreakDown(1);
@@ -578,6 +667,20 @@ contract MapleLoanTest is StateManipulations, TestUtils {
 
         assertTrue(borrower.try_loan_makePayment(address(loan)), "Cannot pay");
 
+        {   
+            LoanState memory updatedState = updateLoanState({
+                    state_:              loanState,
+                    claimableFunds_:     principalPortion + interestPortion,
+                    collateral_:         150_000,
+                    drawableFunds_:      500_000,
+                    lender_:             address(lender),
+                    nextPaymentDueDate_: currentNextPaymentDueDate = currentNextPaymentDueDate + mockLoan.paymentInterval() * 1,
+                    principal_:          1_000_000,
+                    paymentsRemaining_:  1
+            });
+            assert_loan_state(mockLoan, updatedState);
+        }
+
         // Check details for upcoming payment #6
         ( principalPortion, interestPortion, lateFeesPortion ) = loan.getNextPaymentsBreakDown(1);
 
@@ -595,9 +698,19 @@ contract MapleLoanTest is StateManipulations, TestUtils {
 
         assertTrue(borrower.try_loan_makePayment(address(loan)), "Cannot pay");
 
-        // Check details for upcoming payment which should not be necessary
-        assertEq(loan.paymentsRemaining(), 0, "Different payments remaining");
-        assertEq(loan.principal(),         0, "Different payments remaining");
+        {   
+            LoanState memory updatedState = updateLoanState({
+                    state_:              loanState,
+                    claimableFunds_:     20_000 + principalPortion + interestPortion,
+                    collateral_:         150_000,
+                    drawableFunds_:      500_000,
+                    lender_:             address(lender),
+                    nextPaymentDueDate_: currentNextPaymentDueDate = currentNextPaymentDueDate + mockLoan.paymentInterval() * 1,
+                    principal_:          0,
+                    paymentsRemaining_:  0
+            });
+            assert_loan_state(mockLoan, updatedState);
+        }
 
         // Remove rest of available funds and collateral
         assertTrue(borrower.try_loan_drawdownFunds(address(loan), 150_000, address(borrower)),    "Cannot drawdown");
