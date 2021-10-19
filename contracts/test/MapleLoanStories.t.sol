@@ -123,24 +123,29 @@ contract MapleLoanTest is StateManipulations, TestUtils {
         token.mint(address(borrower), 1_000_000);
         token.mint(address(lender),   1_000_000);
 
-        address[2] memory assets = [address(token), address(token)];
+        ConstructableMapleLoan loan;
+        LoanState memory loanState;
 
-        uint256[6] memory parameters = [
-            uint256(10 days),
-            uint256(365 days / 6),
-            uint256(6),
-            uint256(0.12 ether),
-            uint256(0.10 ether),
-            uint256(0 ether)
-        ];
+        {
+            address[2] memory assets = [address(token), address(token)];
 
-        uint256[3] memory amounts = [uint256(300_000), uint256(1_000_000), uint256(0)];
-        uint256[4] memory fees    = [uint256(0), uint256(0), uint256(0), uint256(0)];
+            uint256[6] memory parameters = [
+                uint256(10 days),
+                uint256(365 days / 6),
+                uint256(6),
+                uint256(0.12 ether),
+                uint256(0.10 ether),
+                uint256(0 ether)
+            ];
 
-        ConstructableMapleLoan loan     = new ConstructableMapleLoan(address(borrower), assets, parameters, amounts, fees);
-        IMapleLoan             mockLoan = IMapleLoan(address(loan));
+            uint256[3] memory amounts = [uint256(300_000), uint256(1_000_000), uint256(0)];
+            uint256[4] memory fees    = [uint256(0), uint256(0), uint256(0), uint256(0)];
 
-        LoanState memory loanState = createDefaultState(address(borrower), parameters, amounts, fees, assets);
+            loan = new ConstructableMapleLoan(address(borrower), assets, parameters, amounts, fees);
+            loanState = createDefaultState(address(borrower), parameters, amounts, fees, assets);
+        }
+
+        IMapleLoan mockLoan = IMapleLoan(address(loan));
 
         assert_loan_state(mockLoan, loanState);
 
@@ -198,36 +203,27 @@ contract MapleLoanTest is StateManipulations, TestUtils {
             assert_loan_state(mockLoan, updatedState);
         }
 
-        {
-            // Check details for upcoming payment #1
-            ( uint256 principalPortion, uint256 interestPortion, uint256 lateFeesPortion ) = loan.getNextPaymentsBreakDown(1);
+        uint256 currentNextPaymentDueDate = mockLoan.nextPaymentDueDate();
 
-            assertEq(principalPortion,         158_525,   "Different principal");
-            assertEq(interestPortion,          20_000,    "Different interest");
-            assertEq(lateFeesPortion,          0,         "Different late fees");
-            assertEq(loan.paymentsRemaining(), 6,         "Different payments remaining");
-            assertEq(loan.principal(),         1_000_000, "Different payments remaining");
-        }
+        // Check details for upcoming payment #1
+        ( uint256 principalPortion, uint256 interestPortion, uint256 adminFee, uint256 serviceFee ) = loan.getNextPaymentsBreakDownWithFee(1);
+
+        assertEq(principalPortion,         158_525,   "Different principal");
+        assertEq(interestPortion,          20_000,    "Different interest");
+        assertEq(serviceFee + adminFee,    0,         "Different late fees");
+        assertEq(loan.paymentsRemaining(), 6,         "Different payments remaining");
+        assertEq(loan.principal(),         1_000_000, "Different payments remaining");
+
         // Warp to 1 second before payment #1 becomes late
         hevm.warp(loan.nextPaymentDueDate() - 1);
 
         // Make payment #1
         borrower.erc20_transfer(address(token), address(loan), 178_526);
 
-        uint256 currentNextPaymentDueDate = mockLoan.nextPaymentDueDate();
-
         assertTrue(borrower.try_loan_makePayment(address(loan)), "Cannot pay");
 
         {
             address lender_ = address(lender);
-            // Check details for upcoming payment #2
-            ( uint256 principalPortion, uint256 interestPortion, uint256 adminFee, uint256 serviceFee ) = loan.getNextPaymentsBreakDownWithFee(1);
-
-            assertEq(principalPortion,         161_696, "Different principal");
-            assertEq(interestPortion,          16_829,  "Different interest");
-            assertEq(serviceFee + adminFee,    0,       "Different late fees");
-            assertEq(loan.paymentsRemaining(), 5,       "Different payments remaining");
-            assertEq(loan.principal(),         841_475, "Different payments remaining");
 
             serviceFee = principalPortion + interestPortion + serviceFee - adminFee;
 
@@ -235,14 +231,23 @@ contract MapleLoanTest is StateManipulations, TestUtils {
                     loanState,
                     serviceFee,
                     300_000,
-                    uint256(0),
+                    1,
                     lender_,
-                    currentNextPaymentDueDate + mockLoan.paymentInterval() * 1,
+                    currentNextPaymentDueDate = currentNextPaymentDueDate + mockLoan.paymentInterval() * 1,
                     1_000_000 - principalPortion,
                     5
             );
             assert_loan_state(mockLoan, updatedState);
         }
+
+        // Check details for upcoming payment #2
+        (principalPortion, interestPortion, adminFee, serviceFee ) = loan.getNextPaymentsBreakDownWithFee(1);
+
+        assertEq(principalPortion,         161_696, "Different principal");
+        assertEq(interestPortion,          16_829,  "Different interest");
+        assertEq(serviceFee + adminFee,    0,       "Different late fees");
+        assertEq(loan.paymentsRemaining(), 5,       "Different payments remaining");
+        assertEq(loan.principal(),         841_475, "Different payments remaining");
 
         // Warp to 1 second before payment #2 becomes late
         hevm.warp(loan.nextPaymentDueDate() - 1);
@@ -250,35 +255,34 @@ contract MapleLoanTest is StateManipulations, TestUtils {
         // Make payment #2
         borrower.erc20_transfer(address(token), address(loan), 178_526);
 
-        currentNextPaymentDueDate = mockLoan.nextPaymentDueDate();
-
         assertTrue(borrower.try_loan_makePayment(address(loan)), "Cannot pay");
 
-        {   
+        {
             address lender_ = address(lender);
-            // Check details for upcoming payment #3
-            ( uint256 principalPortion, uint256 interestPortion, uint256 adminFee, uint256 serviceFee ) = loan.getNextPaymentsBreakDownWithFee(1);
-
-            assertEq(principalPortion,         164_930, "Different principal");
-            assertEq(interestPortion,          13_595,  "Different interest");
-            assertEq(adminFee + serviceFee,    0,       "Different late fees");
-            assertEq(loan.paymentsRemaining(), 4,       "Different payments remaining");
-            assertEq(loan.principal(),         679_779, "Different payments remaining");
-
+            
             serviceFee = principalPortion + interestPortion + serviceFee - adminFee;
 
             LoanState memory updatedState = updateLoanState(
                     loanState,
-                    serviceFee,
+                    178_525 + serviceFee,
                     300_000,
-                    uint256(0),
+                    uint256(2),
                     lender_,
-                    currentNextPaymentDueDate + mockLoan.paymentInterval() * 1,
+                    currentNextPaymentDueDate = currentNextPaymentDueDate + mockLoan.paymentInterval() * 1,
                     841_475 - principalPortion,
                     4
             );
             assert_loan_state(mockLoan, updatedState);
         }
+
+        // Check details for upcoming payment #3
+        ( principalPortion, interestPortion, adminFee, serviceFee ) = loan.getNextPaymentsBreakDownWithFee(1);
+
+        assertEq(principalPortion,         164_930, "Different principal");
+        assertEq(interestPortion,          13_595,  "Different interest");
+        assertEq(adminFee + serviceFee,    0,       "Different late fees");
+        assertEq(loan.paymentsRemaining(), 4,       "Different payments remaining");
+        assertEq(loan.principal(),         679_779, "Different payments remaining");
 
         // Warp to 1 second before payment #3 becomes late
         hevm.warp(loan.nextPaymentDueDate() - 1);
@@ -288,36 +292,36 @@ contract MapleLoanTest is StateManipulations, TestUtils {
 
         assertTrue(borrower.try_loan_makePayment(address(loan)), "Cannot pay");
 
-        currentNextPaymentDueDate = mockLoan.nextPaymentDueDate();
-
         // Remove some collateral
         assertTrue(borrower.try_loan_removeCollateral(address(loan), 145_545, address(borrower)), "Cannot remove collateral");
 
         {   
             address lender_ = address(lender);
-            // Check details for upcoming payment #4
-            ( uint256 principalPortion, uint256 interestPortion, uint256 adminFee, uint256 serviceFee ) = loan.getNextPaymentsBreakDownWithFee(1);
-
-            assertEq(principalPortion,         168_230, "Different principal");
-            assertEq(interestPortion,          10_296,  "Different interest");
-            assertEq(adminFee + serviceFee,    0,       "Different late fees");
-            assertEq(loan.paymentsRemaining(), 3,       "Different payments remaining");
-            assertEq(loan.principal(),         514_849, "Different payments remaining");
-
+        
             serviceFee = principalPortion + interestPortion + serviceFee - adminFee;
 
             LoanState memory updatedState = updateLoanState(
                     loanState,
-                    serviceFee,
+                    178_525 + 178_525 + serviceFee,
                     154_455,
-                    uint256(0),
+                    uint256(2),
                     lender_,
-                    currentNextPaymentDueDate + mockLoan.paymentInterval() * 1,
+                    currentNextPaymentDueDate = currentNextPaymentDueDate + mockLoan.paymentInterval() * 1,
                     679_779 - principalPortion,
                     3
             );
             assert_loan_state(mockLoan, updatedState);
         }
+
+        // Check details for upcoming payment #4
+        ( principalPortion, interestPortion, adminFee, serviceFee ) = loan.getNextPaymentsBreakDownWithFee(1);
+
+        assertEq(principalPortion,         168_230, "Different principal");
+        assertEq(interestPortion,          10_296,  "Different interest");
+        assertEq(adminFee + serviceFee,    0,       "Different late fees");
+        assertEq(loan.paymentsRemaining(), 3,       "Different payments remaining");
+        assertEq(loan.principal(),         514_849, "Different payments remaining");
+
         // Warp to 1 second before payment #4 becomes late
         hevm.warp(loan.nextPaymentDueDate() - 1);
 
@@ -337,36 +341,33 @@ contract MapleLoanTest is StateManipulations, TestUtils {
 
         assertEq(loan.collateral(), 69_396, "Different collateral");
 
-        currentNextPaymentDueDate = mockLoan.nextPaymentDueDate();
-
         // Claim loan proceeds thus far
         assertTrue(lender.try_loan_claimFunds(address(loan), 714_101, address(lender)), "Cannot claim funds");
-        
+
         {   
             address lender_ = address(lender);
-            // Check details for upcoming payment #5
-            ( uint256 principalPortion, uint256 interestPortion, uint256 adminFee, uint256 serviceFee ) = loan.getNextPaymentsBreakDownWithFee(1);
-
-            assertEq(principalPortion,         171_593, "Different principal");
-            assertEq(interestPortion,          6_932,   "Different interest");
-            assertEq(adminFee + serviceFee,    0,       "Different late fees");
-            assertEq(loan.paymentsRemaining(), 2,       "Different payments remaining");
-            assertEq(loan.principal(),         346_619, "Different payments remaining");
-
-            serviceFee = principalPortion + interestPortion + serviceFee - adminFee;
-
+            
             LoanState memory updatedState = updateLoanState(
                     loanState,
-                    serviceFee,
-                    69_396,
                     uint256(0),
+                    69_396,
+                    150_001,
                     lender_,
-                    currentNextPaymentDueDate + mockLoan.paymentInterval() * 1,
+                    currentNextPaymentDueDate = currentNextPaymentDueDate + mockLoan.paymentInterval() * 1,
                     514_849 - principalPortion,
                     2
             );
             assert_loan_state(mockLoan, updatedState);
         }
+
+        // Check details for upcoming payment #5
+        ( principalPortion, interestPortion, adminFee, serviceFee ) = loan.getNextPaymentsBreakDownWithFee(1);
+
+        assertEq(principalPortion,         171_593, "Different principal");
+        assertEq(interestPortion,          6_932,   "Different interest");
+        assertEq(adminFee + serviceFee,    0,       "Different late fees");
+        assertEq(loan.paymentsRemaining(), 2,       "Different payments remaining");
+        assertEq(loan.principal(),         346_619, "Different payments remaining");
 
         // Warp to 1 second before payment #5 becomes late
         hevm.warp(loan.nextPaymentDueDate() - 1);
@@ -374,21 +375,10 @@ contract MapleLoanTest is StateManipulations, TestUtils {
         // Make payment #5
         borrower.erc20_transfer(address(token), address(loan), 178_525);
 
-        currentNextPaymentDueDate = mockLoan.nextPaymentDueDate();
-
         assertTrue(borrower.try_loan_makePayment(address(loan)), "Cannot pay");
-
-        {
+        
+        {   
             address lender_ = address(lender);
-
-            // Check details for upcoming payment #6
-            ( uint256 principalPortion, uint256 interestPortion, uint256 adminFee, uint256 serviceFee ) = loan.getNextPaymentsBreakDownWithFee(1);
-
-            assertEq(principalPortion,         175_026, "Different principal");
-            assertEq(interestPortion,          3_500,   "Different interest");
-            assertEq(adminFee + serviceFee,    0,       "Different late fees");
-            assertEq(loan.paymentsRemaining(), 1,       "Different payments remaining");
-            assertEq(loan.principal(),         175_026, "Different payments remaining");
 
             serviceFee = principalPortion + interestPortion + serviceFee - adminFee;
 
@@ -396,14 +386,24 @@ contract MapleLoanTest is StateManipulations, TestUtils {
                     loanState,
                     serviceFee,
                     69_396,
-                    uint256(0),
+                    150_001,
                     lender_,
-                    currentNextPaymentDueDate + mockLoan.paymentInterval() * 1,
+                    currentNextPaymentDueDate = currentNextPaymentDueDate + mockLoan.paymentInterval() * 1,
                     346_619 - principalPortion,
                     1
             );
             assert_loan_state(mockLoan, updatedState);
         }
+
+        // Check details for upcoming payment #6
+        ( principalPortion, interestPortion, adminFee, serviceFee ) = loan.getNextPaymentsBreakDownWithFee(1);
+
+        assertEq(principalPortion,         175_026, "Different principal");
+        assertEq(interestPortion,          3_500,   "Different interest");
+        assertEq(adminFee + serviceFee,    0,       "Different late fees");
+        assertEq(loan.paymentsRemaining(), 1,       "Different payments remaining");
+        assertEq(loan.principal(),         175_026, "Different payments remaining");
+
         // Warp to 1 second before payment #6 becomes late
         hevm.warp(loan.nextPaymentDueDate() - 1);
 
@@ -412,24 +412,19 @@ contract MapleLoanTest is StateManipulations, TestUtils {
 
         assertTrue(borrower.try_loan_makePayment(address(loan)), "Cannot pay");
 
-        currentNextPaymentDueDate = mockLoan.nextPaymentDueDate();
-
         {
             address lender_ = address(lender);
-
-            // Check details for upcoming payment #6
-            ( uint256 principalPortion, uint256 interestPortion, uint256 adminFee, uint256 serviceFee ) = loan.getNextPaymentsBreakDownWithFee(1);
 
             serviceFee = principalPortion + interestPortion + serviceFee - adminFee;
 
             LoanState memory updatedState = updateLoanState(
                     loanState,
-                    serviceFee,
+                    178_525 + serviceFee,
                     69_396,
-                    uint256(0),
+                    150_000,
                     lender_,
-                    currentNextPaymentDueDate + mockLoan.paymentInterval() * 1,
-                    0,
+                    currentNextPaymentDueDate = currentNextPaymentDueDate + mockLoan.paymentInterval() * 1,
+                    175_026 - principalPortion,
                     0
             );
             assert_loan_state(mockLoan, updatedState);
