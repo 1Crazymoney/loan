@@ -541,7 +541,12 @@ contract MapleLoanTest is StateManipulations, TestUtils {
         lender.erc20_transfer(address(token), address(loan), 500_000);
         lender.erc20_approve(address(token), address(loan),  500_000);
 
+        assertEq(token.balanceOf(address(loan)), 500_000, "Incorrect balance");
+
         assertTrue(lender.try_loan_fundLoan(address(loan), address(lender), 500_000), "Cannot lend");
+        
+        assertEq(token.balanceOf(address(lender)), 0,         "Incorrect balance deduction");
+        assertEq(token.balanceOf(address(loan)),   1_000_000, "Incorrect balance update");
 
         {   
             LoanState memory updatedState = updateLoanState({
@@ -563,6 +568,9 @@ contract MapleLoanTest is StateManipulations, TestUtils {
 
         assertTrue(borrower.try_loan_postCollateral(address(loan)),                              "Cannot post");
         assertTrue(borrower.try_loan_drawdownFunds(address(loan), 1_000_000, address(borrower)), "Cannot drawdown");
+
+        assertEq(token.balanceOf(address(borrower)), 1_000_000 - 300_000 + 1_000_000, "Incorrect balance deduction");
+        assertEq(token.balanceOf(address(loan)),     1_000_000 + 300_000 - 1_000_000, "Incorrect balance update");
 
         {   
             LoanState memory updatedState = updateLoanState({
@@ -594,6 +602,9 @@ contract MapleLoanTest is StateManipulations, TestUtils {
         borrower.erc20_transfer(address(token), address(loan), 20_000);
 
         assertTrue(borrower.try_loan_makePayment(address(loan)), "Cannot pay");
+
+        assertEq(token.balanceOf(address(borrower)), 1_000_000 - 300_000 + 1_000_000 - 20_000, "Incorrect balance deduction");
+        assertEq(token.balanceOf(address(loan)),     1_000_000 + 300_000 - 1_000_000 + 20_000, "Incorrect balance update");
 
         {   
             LoanState memory updatedState = updateLoanState({
@@ -628,6 +639,9 @@ contract MapleLoanTest is StateManipulations, TestUtils {
 
         assertTrue(borrower.try_loan_makePayment(address(loan)), "Cannot pay");
 
+        assertEq(token.balanceOf(address(borrower)), 1_000_000 - 300_000 + 1_000_000 - 20_000 - 20_000, "Incorrect balance deduction");
+        assertEq(token.balanceOf(address(loan)),     1_000_000 + 300_000 - 1_000_000 + 20_000 + 20_000, "Incorrect balance update");
+
         {   
             LoanState memory updatedState = updateLoanState({
                     state_:              loanState,
@@ -658,6 +672,9 @@ contract MapleLoanTest is StateManipulations, TestUtils {
         borrower.erc20_transfer(address(token), address(loan), 20_000);
 
         assertTrue(borrower.try_loan_makePayment(address(loan)), "Cannot pay");
+
+        assertEq(token.balanceOf(address(borrower)), 1_000_000 - 300_000 + 1_000_000 - 20_000 - 20_000 - 20_000, "Incorrect balance deduction");
+        assertEq(token.balanceOf(address(loan)),     1_000_000 + 300_000 - 1_000_000 + 20_000 + 20_000 + 20_000, "Incorrect balance update");
 
         {   
             LoanState memory updatedState = updateLoanState({
@@ -699,6 +716,17 @@ contract MapleLoanTest is StateManipulations, TestUtils {
         // Claim loan proceeds thus far
         assertTrue(lender.try_loan_claimFunds(address(loan), 80000, address(lender)), "Cannot claim funds");
 
+        assertEq(
+            token.balanceOf(address(borrower)),
+            1_000_000 - 300_000 + 1_000_000 - 20_000 - 20_000 - 20_000 - 20_000 - 500_000 + 150_000,
+            "Incorrect balance deduction"
+        );
+        assertEq(
+            token.balanceOf(address(loan)),
+            1_000_000 + 300_000 - 1_000_000 + 20_000 + 20_000 + 20_000 + 20_000 + 500_000 - 150_000 - 80000,
+            "Incorrect balance update"
+        );
+
         {   
             LoanState memory updatedState = updateLoanState({
                     state_:              loanState,
@@ -729,6 +757,17 @@ contract MapleLoanTest is StateManipulations, TestUtils {
         borrower.erc20_transfer(address(token), address(loan), 20_000);
 
         assertTrue(borrower.try_loan_makePayment(address(loan)), "Cannot pay");
+
+        assertEq(
+            token.balanceOf(address(borrower)),
+            1_000_000 - 300_000 + 1_000_000 - 20_000 - 20_000 - 20_000 - 20_000 - 500_000 + 150_000 - 20_000,
+            "Incorrect balance deduction"
+        );
+        assertEq(
+            token.balanceOf(address(loan)),
+            1_000_000 + 300_000 - 1_000_000 + 20_000 + 20_000 + 20_000 + 20_000 + 500_000 - 150_000 - 80000 + 20_000,
+            "Incorrect balance update"
+        );
 
         {   
             LoanState memory updatedState = updateLoanState({
@@ -761,6 +800,17 @@ contract MapleLoanTest is StateManipulations, TestUtils {
 
         assertTrue(borrower.try_loan_makePayment(address(loan)), "Cannot pay");
 
+        assertEq(
+            token.balanceOf(address(borrower)),
+            1_000_000 - 300_000 + 1_000_000 - 20_000 - 20_000 - 20_000 - 20_000 - 500_000 + 150_000 - 20_000 - 1_020_000,
+            "Incorrect balance deduction"
+        );
+        assertEq(
+            token.balanceOf(address(loan)),
+            1_000_000 + 300_000 - 1_000_000 + 20_000 + 20_000 + 20_000 + 20_000 + 500_000 - 150_000 - 80000 + 20_000 + 1_020_000,
+            "Incorrect balance update"
+        );
+
         {   
             LoanState memory updatedState = updateLoanState({
                     state_:              loanState,
@@ -778,6 +828,17 @@ contract MapleLoanTest is StateManipulations, TestUtils {
         // Remove rest of available funds and collateral
         assertTrue(borrower.try_loan_drawdownFunds(address(loan), 150_000, address(borrower)),    "Cannot drawdown");
         assertTrue(borrower.try_loan_removeCollateral(address(loan), 150_000, address(borrower)), "Cannot remove collateral");
+
+        assertEq(
+            token.balanceOf(address(borrower)),
+            1_000_000 - 300_000 + 1_000_000 - 20_000 - 20_000 - 20_000 - 20_000 - 500_000 + 150_000 - 20_000 - 1_020_000 + 150_000 + 150_000,
+            "Incorrect balance deduction"
+        );
+        assertEq(
+            token.balanceOf(address(loan)),
+            1_000_000 + 300_000 - 1_000_000 + 20_000 + 20_000 + 20_000 + 20_000 + 500_000 - 150_000 - 80000 + 20_000 + 1_020_000 - 150_000 - 150_000,
+            "Incorrect balance update"
+        );
 
         assertEq(loan.collateral(), 0, "Different collateral");
 
