@@ -166,11 +166,6 @@ contract Loan is ILoan, BasicFundsTokenFDT, Pausable {
         // Call `updateFundsReceived()` update LoanFDT accounting with funds received from fees and excess returned.
         updateFundsReceived();
 
-        _emitBalanceUpdateEvent(collateralLocker, collateralAsset);
-        _emitBalanceUpdateEvent(fundingLocker,    liquidityAsset);
-        _emitBalanceUpdateEvent(address(this),    liquidityAsset);
-        _emitBalanceUpdateEvent(treasury,         liquidityAsset);
-
         emit LoanStateChanged(State.Active);
         emit Drawdown(amt);
     }
@@ -213,8 +208,6 @@ contract Loan is ILoan, BasicFundsTokenFDT, Pausable {
             // Transfer all collateral back to the Borrower.
             ICollateralLockerLike(collateralLocker).pull(borrower, _getCollateralLockerBalance());
 
-            _emitBalanceUpdateEvent(collateralLocker, collateralAsset);
-
             emit LoanStateChanged(State.Matured);
         }
 
@@ -233,8 +226,6 @@ contract Loan is ILoan, BasicFundsTokenFDT, Pausable {
             paymentsRemaining > 0 ? nextPaymentDue : 0,
             paymentLate
         );
-
-        _emitBalanceUpdateEvent(address(this), liquidityAsset);
     }
 
     function proposeNewTerms(bytes[] calldata calls) external override {
@@ -263,8 +254,6 @@ contract Loan is ILoan, BasicFundsTokenFDT, Pausable {
         }
 
         emit LoanFunded(mintTo, amt);
-
-        _emitBalanceUpdateEvent(fundingLocker, liquidityAsset);
     }
 
     function unwind() external override {
@@ -285,8 +274,6 @@ contract Loan is ILoan, BasicFundsTokenFDT, Pausable {
 
         // Pull the Collateral Asset from the CollateralLocker, swap to the Liquidity Asset, and hold custody of the resulting Liquidity Asset in the Loan.
         (amountLiquidated, amountRecovered) = LoanLib.liquidateCollateral(collateralAsset, liquidityAsset, superFactory, collateralLocker);
-
-        _emitBalanceUpdateEvent(collateralLocker, collateralAsset);
 
         if (amountRecovered <= principalOwed) {
             // Decrement `principalOwed` by `amountRecovered`, set `defaultSuffered` to the difference (shortfall from the liquidation).
@@ -413,8 +400,6 @@ contract Loan is ILoan, BasicFundsTokenFDT, Pausable {
     function withdrawFunds() public override {
         LoanLib.whenProtocolNotPaused(superFactory);
         super.withdrawFunds();
-
-        _emitBalanceUpdateEvent(address(this), fundsToken);
     }
 
     /************************/
@@ -461,13 +446,6 @@ contract Loan is ILoan, BasicFundsTokenFDT, Pausable {
      */
     function _isValidBorrower() internal view {
         require(msg.sender == borrower, "L:INV_BORROWER");
-    }
-
-    /**
-        @dev Emits a `BalanceUpdated` event for an account and token.
-     */
-    function _emitBalanceUpdateEvent(address account, address token) internal {
-        emit BalanceUpdated(account, token, IERC20(token).balanceOf(account));
     }
 
     function _isSoleLender(address account) internal view {

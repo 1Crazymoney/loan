@@ -21,14 +21,6 @@ interface ILoan {
     event LoanFunded(address indexed fundedBy, uint256 amountFunded);
 
     /**
-        @dev   Emits an event indicating the balance for an account was updated.
-        @param account The address of an account.
-        @param token   The token address of the asset.
-        @param balance The new balance of `token` for `account`.
-     */
-    event BalanceUpdated(address indexed account, address indexed token, uint256 balance);
-
-    /**
         @dev   Emits an event indicating the some loaned amount was drawn down.
         @param drawdownAmount The amount that was drawn down.
      */
