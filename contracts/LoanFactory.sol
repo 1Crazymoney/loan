@@ -25,8 +25,6 @@ contract LoanFactory is ILoanFactory, Pausable {
     mapping(uint256 => address) public override loans;
     mapping(address => bool)    public override isLoan;  // True only if a Loan was created by this factory.
 
-    mapping(address => bool) public override loanFactoryAdmins;
-
     constructor(address _globals) public {
         globals = _globals;
     }
@@ -45,15 +43,14 @@ contract LoanFactory is ILoanFactory, Pausable {
         address[3] memory calcs
     ) external override whenNotPaused returns (address loanAddress) {
         _whenProtocolNotPaused();
-        IMapleGlobalsLike _globals = IMapleGlobalsLike(globals);
 
         // Perform validity checks.
-        require(_globals.isValidSubFactory(address(this), flFactory, FL_FACTORY), "LF:INVALID_FLF");
-        require(_globals.isValidSubFactory(address(this), clFactory, CL_FACTORY), "LF:INVALID_CLF");
+        require(IMapleGlobalsLike(globals).isValidSubFactory(address(this), flFactory, FL_FACTORY), "LF:INV_FLF");
+        require(IMapleGlobalsLike(globals).isValidSubFactory(address(this), clFactory, CL_FACTORY), "LF:INV_CLF");
 
-        require(_globals.isValidCalc(calcs[0], INTEREST_CALC_TYPE), "LF:INVALID_INT_C");
-        require(_globals.isValidCalc(calcs[1],  LATEFEE_CALC_TYPE), "LF:INVALID_LATE_FEE_C");
-        require(_globals.isValidCalc(calcs[2],  PREMIUM_CALC_TYPE), "LF:INVALID_PREM_C");
+        require(IMapleGlobalsLike(globals).isValidCalc(calcs[0], INTEREST_CALC_TYPE), "LF:INV_I_C");
+        require(IMapleGlobalsLike(globals).isValidCalc(calcs[1],  LATEFEE_CALC_TYPE), "LF:INV_LF_C");
+        require(IMapleGlobalsLike(globals).isValidCalc(calcs[2],  PREMIUM_CALC_TYPE), "LF:INV_P_C");
 
         // Deploy new Loan.
         Loan loan = new Loan(
@@ -67,13 +64,10 @@ contract LoanFactory is ILoanFactory, Pausable {
         );
 
         // Update the LoanFactory identification mappings.
-        loanAddress         = address(loan);
-        loans[loansCreated] = loanAddress;
-        isLoan[loanAddress] = true;
-        ++loansCreated;
+        isLoan[loans[loansCreated++] = loanAddress = address(loan)] = true;
 
         emit LoanCreated(
-            loanAddress,
+            address(loan),
             msg.sender,
             liquidityAsset,
             collateralAsset,
@@ -86,19 +80,13 @@ contract LoanFactory is ILoanFactory, Pausable {
         );
     }
 
-    function setLoanFactoryAdmin(address loanFactoryAdmin, bool allowed) external override {
-        _isValidGovernor();
-        loanFactoryAdmins[loanFactoryAdmin] = allowed;
-        emit LoanFactoryAdminSet(loanFactoryAdmin, allowed);
-    }
-
     function pause() external override {
-        _isValidGovernorOrLoanFactoryAdmin();
+        _isValidGovernor();
         super._pause();
     }
 
     function unpause() external override {
-        _isValidGovernorOrLoanFactoryAdmin();
+        _isValidGovernor();
         super._unpause();
     }
 
@@ -106,14 +94,7 @@ contract LoanFactory is ILoanFactory, Pausable {
         @dev Checks that `msg.sender` is the Governor.
      */
     function _isValidGovernor() internal view {
-        require(msg.sender == IMapleGlobalsLike(globals).governor(), "LF:NOT_GOV");
-    }
-
-    /**
-        @dev Checks that `msg.sender` is the Governor or a LoanFactory Admin.
-     */
-    function _isValidGovernorOrLoanFactoryAdmin() internal view {
-        require(msg.sender == IMapleGlobalsLike(globals).governor() || loanFactoryAdmins[msg.sender], "LF:NOT_GOV_OR_ADMIN");
+        require(msg.sender == IMapleGlobalsLike(globals).governor(), "LF:INV_GOV");
     }
 
     /**

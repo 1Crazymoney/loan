@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity 0.6.11;
+pragma experimental ABIEncoderV2;
 
 interface ILoan {
 
@@ -40,13 +41,6 @@ interface ILoan {
     event LoanStateChanged(State state);
 
     /**
-        @dev   Emits an event indicating the an Admin for the Loan was set.
-        @param loanAdmin The address of some Loan Admin.
-        @param allowed   Whether `loanAdmin` is a Loan Admin for this Loan.
-     */
-    event LoanAdminSet(address indexed loanAdmin, bool allowed);
-
-    /**
         @dev   Emits an event indicating the a payment was made for the Loan.
         @param totalPaid         The total amount paid.
         @param principalPaid     The principal portion of the amount paid.
@@ -79,6 +73,10 @@ interface ILoan {
         uint256 liquidationExcess,
         uint256 defaultSuffered
     );
+
+    event NewTermsProposed(bytes32 refinanceCommitment, bytes[] calls);
+
+    event NewTermsAccepted(bytes32 refinanceCommitment);
 
     /**
         @dev The current state of this Loan, as defined in the State enum below.
@@ -139,12 +137,6 @@ interface ILoan {
         @dev The LoanFactory that deployed this Loan.
      */
     function superFactory() external view returns (address);
-
-    /**
-        @param  loanAdmin The address of some admin.
-        @return Whether the `loanAdmin` has permission to do certain operations in case of disaster management.
-     */
-    function loanAdmins(address loanAdmin) external view returns (bool);
 
     /**
         @dev The unix timestamp due date of the next payment.
@@ -242,78 +234,69 @@ interface ILoan {
     function liquidationExcess() external view returns (uint256);
 
     /**
-        @dev   Draws down funding from FundingLocker, posts collateral, and transitions the Loan state from `Ready` to `Active`. 
-        @dev   Only the Borrower can call this function. 
-        @dev   It emits four `BalanceUpdated` events. 
-        @dev   It emits a `LoanStateChanged` event. 
-        @dev   It emits a `Drawdown` event. 
+        @dev   Draws down funding from FundingLocker, posts collateral, and transitions the Loan state from `Ready` to `Active`.
+        @dev   Only the Borrower can call this function.
+        @dev   It emits four `BalanceUpdated` events.
+        @dev   It emits a `LoanStateChanged` event.
+        @dev   It emits a `Drawdown` event.
         @param amt the amount of Liquidity Asset the Borrower draws down. Remainder is returned to the Loan where it can be claimed back by LoanFDT holders.
      */
     function drawdown(uint256 amt) external;
 
     /**
-        @dev Makes a payment for this Loan. 
-        @dev Amounts are calculated for the Borrower. 
+        @dev Makes a payment for this Loan.
+        @dev Amounts are calculated for the Borrower.
      */
     function makePayment() external;
 
     /**
-        @dev Makes the full payment for this Loan (a.k.a. "calling" the Loan). 
-        @dev This requires the Borrower to pay a premium fee. 
+        @dev Makes the full payment for this Loan (a.k.a. "calling" the Loan).
+        @dev This requires the Borrower to pay a premium fee.
      */
     function makeFullPayment() external;
-    
+
     /**
-        @dev   Funds this Loan and mints LoanFDTs for `mintTo` (DebtLocker in the case of Pool funding). 
-        @dev   Only LiquidityLocker using valid/approved Pool can call this function. 
-        @dev   It emits a `LoanFunded` event. 
-        @dev   It emits a `BalanceUpdated` event. 
+        @dev   Funds this Loan and mints LoanFDTs for `mintTo` (DebtLocker in the case of Pool funding).
+        @dev   Only LiquidityLocker using valid/approved Pool can call this function.
+        @dev   It emits a `LoanFunded` event.
+        @dev   It emits a `BalanceUpdated` event.
         @param mintTo The address that LoanFDTs are minted to.
         @param amt    The amount to fund the Loan.
      */
     function fundLoan(address mintTo, uint256 amt) external;
 
     /**
-        @dev Handles returning capital to the Loan, where it can be claimed back by LoanFDT holders, 
-             if the Borrower has not drawn down on the Loan past the drawdown grace period. 
-        @dev It emits a `LoanStateChanged` event. 
+        @dev Handles returning capital to the Loan, where it can be claimed back by LoanFDT holders,
+             if the Borrower has not drawn down on the Loan past the drawdown grace period.
+        @dev It emits a `LoanStateChanged` event.
      */
     function unwind() external;
 
     /**
-        @dev Triggers a default if the Loan meets certain default conditions, liquidating all collateral and updating accounting. 
-        @dev Only the an account with sufficient LoanFDTs of this Loan can call this function. 
-        @dev It emits a `BalanceUpdated` event. 
-        @dev It emits a `Liquidation` event. 
-        @dev It emits a `LoanStateChanged` event. 
+        @dev Triggers a default if the Loan meets certain default conditions, liquidating all collateral and updating accounting.
+        @dev Only the an account with sufficient LoanFDTs of this Loan can call this function.
+        @dev It emits a `BalanceUpdated` event.
+        @dev It emits a `Liquidation` event.
+        @dev It emits a `LoanStateChanged` event.
      */
     function triggerDefault() external;
 
     /**
-        @dev Triggers paused state. 
-        @dev Halts functionality for certain functions. Only the Borrower or a Loan Admin can call this function. 
+        @dev Triggers paused state.
+        @dev Halts functionality for certain functions. Only the Borrower can call this function.
      */
     function pause() external;
 
     /**
-        @dev Triggers unpaused state. 
-        @dev Restores functionality for certain functions. 
-        @dev Only the Borrower or a Loan Admin can call this function. 
+        @dev Triggers unpaused state.
+        @dev Restores functionality for certain functions.
+        @dev Only the Borrower call this function.
      */
     function unpause() external;
 
     /**
-        @dev   Sets a Loan Admin. 
-        @dev   Only the Borrower can call this function. 
-        @dev   It emits a `LoanAdminSet` event. 
-        @param loanAdmin The address being allowed or disallowed as a Loan Admin.
-        @param allowed   The atatus of a Loan Admin.
-     */
-    function setLoanAdmin(address loanAdmin, bool allowed) external;
-
-    /**
-        @dev   Transfers any locked funds to the Governor. 
-        @dev   Only the Governor can call this function. 
+        @dev   Transfers any locked funds to the Governor.
+        @dev   Only the Governor can call this function.
         @param token The address of the token to be reclaimed.
      */
     function reclaimERC20(address token) external;
@@ -348,5 +331,11 @@ interface ILoan {
         @return The amount of the Collateral Asset required to post in the CollateralLocker for a given drawdown amount.
      */
     function collateralRequiredForDrawdown(uint256 amt) external view returns (uint256);
+
+    function refinanceCommitment() external view returns (bytes32);
+
+    function proposeNewTerms(bytes[] calldata calls) external;
+
+    function acceptNewTerms(bytes[] calldata calls) external;
 
 }

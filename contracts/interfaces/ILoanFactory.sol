@@ -5,13 +5,6 @@ pragma solidity 0.6.11;
 interface ILoanFactory {
 
     /**
-        @dev   Emits an event indicating a LoanFactoryAdmin was allowed.
-        @param loanFactoryAdmin The address of a LoanFactoryAdmin.
-        @param allowed          Whether `loanFactoryAdmin` is allowed as an admin of the LoanFactory.
-     */
-    event LoanFactoryAdminSet(address indexed loanFactoryAdmin, bool allowed);
-
-    /**
         @dev   Emits an event indicating a Loan was created.
         @param loan             The address of the Loan.
         @param borrower         The Borrower.
@@ -93,12 +86,6 @@ interface ILoanFactory {
     function isLoan(address loan) external view returns (bool);
 
     /**
-        @param  admin The address of a LoanFactoryAdmin.
-        @return Whether `admin` has permission to do certain operations in case of disaster management.
-     */
-    function loanFactoryAdmins(address admin) external view returns (bool);
-
-    /**
         @dev   Sets MapleGlobals. 
         @dev   Only the Governor can call this function. 
         @param newGlobals Address of new MapleGlobals.
@@ -134,24 +121,16 @@ interface ILoanFactory {
     ) external returns (address);
 
     /**
-        @dev   Sets a LoanFactory Admin. Only the Governor can call this function.
-        @dev   It emits a `LoanFactoryAdminSet` event.
-        @param loanFactoryAdmin An address being allowed or disallowed as a LoanFactory Admin.
-        @param allowed          The status of `loanFactoryAdmin` as an Admin.
-     */
-    function setLoanFactoryAdmin(address loanFactoryAdmin, bool allowed) external;
-
-    /**
         @dev Triggers paused state. 
         @dev Halts functionality for certain functions. 
-        @dev Only the Governor or a LoanFactory Admin can call this function.
+        @dev Only the Governor can call this function.
      */
     function pause() external;
 
     /**
         @dev Triggers unpaused state. 
         @dev Restores functionality for certain functions. 
-        @dev Only the Governor or a LoanFactory Admin can call this function.
+        @dev Only the Governor can call this function.
      */
     function unpause() external;
 

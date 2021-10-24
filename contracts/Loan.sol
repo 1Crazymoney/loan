@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity 0.6.11;
+pragma experimental ABIEncoderV2;
 
 import { BasicFundsTokenFDT }                    from "../modules/funds-distribution-token/contracts/BasicFundsTokenFDT.sol";
 import { Context as ERC20Context }               from "../modules/funds-distribution-token/modules/openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
@@ -9,18 +10,10 @@ import { Util, IMapleGlobals }                   from "../modules/util/contracts
 
 import { LoanLib } from "./libraries/LoanLib.sol";
 
-import { ILoan }        from "./interfaces/ILoan.sol";
-import { ILoanFactory } from "./interfaces/ILoanFactory.sol";
-import {
-    IERC20Details as IERC20DetailsLike,  // NOTE: Necessary for https://github.com/ethereum/solidity/issues/9278
-    ICollateralLockerLike,
-    ILockerFactoryLike,
-    IFundingLockerLike,
-    IMapleGlobals as IMapleGlobalsLike,  // NOTE: Necessary for https://github.com/ethereum/solidity/issues/9278
-    ILiquidityLockerLike,
-    IPoolLike,
-    IPoolFactoryLike
-} from "./interfaces/Interfaces.sol";
+import { ILoan } from "./interfaces/ILoan.sol";
+
+// NOTE: `IMapleGlobals as IMapleGlobalsLike` necessary for https://github.com/ethereum/solidity/issues/9278
+import { ICollateralLockerLike, ILockerFactoryLike, IMapleGlobals as IMapleGlobalsLike } from "./interfaces/Interfaces.sol";
 
 /// @title Loan maintains all accounting and functionality related to Loans.
 contract Loan is ILoan, BasicFundsTokenFDT, Pausable {
@@ -36,26 +29,24 @@ contract Loan is ILoan, BasicFundsTokenFDT, Pausable {
     address public override immutable flFactory;
     address public override immutable collateralLocker;
     address public override immutable clFactory;
-    address public override immutable borrower;
-    address public override immutable repaymentCalc;
-    address public override immutable lateFeeCalc;
-    address public override immutable premiumCalc;
+    address public override           borrower;
+    address public override           repaymentCalc;
+    address public override           lateFeeCalc;
+    address public override           premiumCalc;
     address public override immutable superFactory;
-
-    mapping(address => bool) public override loanAdmins;
 
     uint256 public override nextPaymentDue;
 
     // Loan specifications
-    uint256 public override immutable apr;
+    uint256 public override           apr;
     uint256 public override           paymentsRemaining;
-    uint256 public override immutable termDays;
-    uint256 public override immutable paymentIntervalSeconds;
-    uint256 public override immutable requestAmount;
-    uint256 public override immutable collateralRatio;
+    uint256 public override           termDays;
+    uint256 public override           paymentIntervalSeconds;
+    uint256 public override           requestAmount;
+    uint256 public override           collateralRatio;
     uint256 public override immutable createdAt;
     uint256 public override immutable fundingPeriod;
-    uint256 public override immutable defaultGracePeriod;
+    uint256 public override           defaultGracePeriod;
 
     // Accounting variables
     uint256 public override principalOwed;
@@ -70,24 +61,27 @@ contract Loan is ILoan, BasicFundsTokenFDT, Pausable {
     uint256 public override defaultSuffered;
     uint256 public override liquidationExcess;
 
+    // Refinance
+    bytes32 public override refinanceCommitment;
+
     /**
-        @dev    Constructor for a Loan. 
-        @dev    It emits a `LoanStateChanged` event. 
+        @dev    Constructor for a Loan.
+        @dev    It emits a `LoanStateChanged` event.
         @param  _borrower        Will receive the funding when calling `drawdown()`. Is also responsible for repayments.
         @param  _liquidityAsset  The asset the Borrower is requesting funding in.
         @param  _collateralAsset The asset provided as collateral by the Borrower.
         @param  _flFactory       Factory to instantiate FundingLocker with.
         @param  _clFactory       Factory to instantiate CollateralLocker with.
-        @param  specs            Contains specifications for this Loan. 
-                                     [0] => apr, 
-                                     [1] => termDays, 
-                                     [2] => paymentIntervalDays (aka PID), 
-                                     [3] => requestAmount, 
-                                     [4] => collateralRatio. 
-        @param  calcs            The calculators used for this Loan. 
-                                     [0] => repaymentCalc, 
-                                     [1] => lateFeeCalc, 
-                                     [2] => premiumCalc. 
+        @param  specs            Contains specifications for this Loan.
+                                     [0] => apr,
+                                     [1] => termDays,
+                                     [2] => paymentIntervalDays (aka PID),
+                                     [3] => requestAmount,
+                                     [4] => collateralRatio.
+        @param  calcs            The calculators used for this Loan.
+                                     [0] => repaymentCalc,
+                                     [1] => lateFeeCalc,
+                                     [2] => premiumCalc.
      */
     constructor(
         address _borrower,
@@ -98,35 +92,33 @@ contract Loan is ILoan, BasicFundsTokenFDT, Pausable {
         uint256[5] memory specs,
         address[3] memory calcs
     ) BasicFundsTokenFDT("Maple Loan Token", "MPL-LOAN", _liquidityAsset) public {
-        IMapleGlobalsLike globals = _globals(msg.sender);
+        address globals = LoanLib.getGlobals(msg.sender);
 
         // Perform validity cross-checks.
         LoanLib.loanSanityChecks(globals, _liquidityAsset, _collateralAsset, specs);
 
-        borrower        = _borrower;
-        liquidityAsset  = _liquidityAsset;
-        collateralAsset = _collateralAsset;
-        flFactory       = _flFactory;
-        clFactory       = _clFactory;
-        createdAt       = block.timestamp;
+        borrower  = _borrower;
+        createdAt = block.timestamp;
 
         // Update state variables.
         apr                    = specs[0];
-        termDays               = specs[1];
-        paymentsRemaining      = specs[1].div(specs[2]);
+        paymentsRemaining      = (termDays = specs[1]).div(specs[2]);
         paymentIntervalSeconds = specs[2].mul(1 days);
         requestAmount          = specs[3];
         collateralRatio        = specs[4];
-        fundingPeriod          = globals.fundingPeriod();
-        defaultGracePeriod     = globals.defaultGracePeriod();
+        fundingPeriod          = IMapleGlobalsLike(globals).fundingPeriod();
+        defaultGracePeriod     = IMapleGlobalsLike(globals).defaultGracePeriod();
         repaymentCalc          = calcs[0];
         lateFeeCalc            = calcs[1];
         premiumCalc            = calcs[2];
         superFactory           = msg.sender;
 
         // Deploy lockers.
-        collateralLocker = ILockerFactoryLike(_clFactory).newLocker(_collateralAsset);
-        fundingLocker    = ILockerFactoryLike(_flFactory).newLocker(_liquidityAsset);
+        collateralLocker = ILockerFactoryLike(clFactory = _clFactory).newLocker(collateralAsset = _collateralAsset);
+        fundingLocker    = ILockerFactoryLike(flFactory = _flFactory).newLocker(liquidityAsset = _liquidityAsset);
+
+        resetRefinanceCommitment();
+
         emit LoanStateChanged(State.Ready);
     }
 
@@ -135,66 +127,63 @@ contract Loan is ILoan, BasicFundsTokenFDT, Pausable {
     /**************************/
 
     function drawdown(uint256 amt) external override {
-        _whenProtocolNotPaused();
-        _isValidBorrower();
-        _isValidState(State.Ready);
-        IMapleGlobalsLike globals = _globals(superFactory);
-
-        IFundingLockerLike _fundingLocker = IFundingLockerLike(fundingLocker);
-
-        require(amt >= requestAmount,              "L:AMT_LT_REQUEST_AMT");
-        require(amt <= _getFundingLockerBalance(), "L:AMT_GT_FUNDED_AMT");
+        uint256 fundingLockerBalance = LoanLib.drawdownChecks(
+            superFactory,
+            borrower,
+            refinanceCommitment,
+            liquidityAsset,
+            fundingLocker,
+            amt,
+            requestAmount
+        );
 
         // Update accounting variables for the Loan.
-        principalOwed  = amt;
-        nextPaymentDue = block.timestamp.add(paymentIntervalSeconds);
+        principalOwed = principalOwed.add(amt);
+
+        if (nextPaymentDue == uint256(0)) {
+            nextPaymentDue = block.timestamp.add(paymentIntervalSeconds);
+        }
 
         loanState = State.Active;
 
-        // Transfer the required amount of collateral for drawdown from the Borrower to the CollateralLocker.
-        IERC20(collateralAsset).safeTransferFrom(borrower, collateralLocker, collateralRequiredForDrawdown(amt));
+        address treasury;
+        ( treasury, feePaid ) = LoanLib.handleDrawdown(
+            superFactory,
+            collateralAsset,
+            borrower,
+            collateralLocker,
+            collateralRequiredForDrawdown(amt),
+            amt,
+            termDays,
+            fundingLocker
+        );
 
-        // Transfer funding amount from the FundingLocker to the Borrower, then drain remaining funds to the Loan.
-        uint256 treasuryFee = globals.treasuryFee();
-        uint256 investorFee = globals.investorFee();
-
-        address treasury = globals.mapleTreasury();
-
-        uint256 _feePaid = feePaid = amt.mul(investorFee).div(10_000);  // Update fees paid for `claim()`.
-        uint256 treasuryAmt        = amt.mul(treasuryFee).div(10_000);  // Calculate amount to send to the MapleTreasury.
-
-        _transferFunds(_fundingLocker, treasury, treasuryAmt);                         // Send the treasury fee directly to the MapleTreasury.
-        _transferFunds(_fundingLocker, borrower, amt.sub(treasuryAmt).sub(_feePaid));  // Transfer drawdown amount to the Borrower.
+        requestAmount = uint256(0);
 
         // Update excessReturned for `claim()`.
-        excessReturned = _getFundingLockerBalance().sub(_feePaid);
-
-        // Drain remaining funds from the FundingLocker (amount equal to `excessReturned` plus `feePaid`)
-        _fundingLocker.drain();
+        excessReturned = fundingLockerBalance.sub(feePaid);
 
         // Call `updateFundsReceived()` update LoanFDT accounting with funds received from fees and excess returned.
         updateFundsReceived();
 
-        _emitBalanceUpdateEventForCollateralLocker();
-        _emitBalanceUpdateEventForFundingLocker();
-        _emitBalanceUpdateEventForLoan();
+        _emitBalanceUpdateEvent(collateralLocker, collateralAsset);
+        _emitBalanceUpdateEvent(fundingLocker,    liquidityAsset);
+        _emitBalanceUpdateEvent(address(this),    liquidityAsset);
+        _emitBalanceUpdateEvent(treasury,         liquidityAsset);
 
-        emit BalanceUpdated(treasury, liquidityAsset, IERC20(liquidityAsset).balanceOf(treasury));
         emit LoanStateChanged(State.Active);
         emit Drawdown(amt);
     }
 
     function makePayment() external override {
-        _whenProtocolNotPaused();
-        _isValidState(State.Active);
+        LoanLib.makePaymentsChecks(superFactory, uint8(loanState));
         (uint256 total, uint256 principal, uint256 interest,, bool paymentLate) = getNextPayment();
         --paymentsRemaining;
         _makePayment(total, principal, interest, paymentLate);
     }
 
     function makeFullPayment() external override {
-        _whenProtocolNotPaused();
-        _isValidState(State.Active);
+        LoanLib.makePaymentsChecks(superFactory, uint8(loanState));
         (uint256 total, uint256 principal, uint256 interest) = getFullPayment();
         paymentsRemaining = uint256(0);
         _makePayment(total, principal, interest, false);
@@ -205,20 +194,16 @@ contract Loan is ILoan, BasicFundsTokenFDT, Pausable {
         @dev It emits one or two `BalanceUpdated` events (depending if payments remaining).
         @dev It emits a `LoanStateChanged` event if no payments remaining.
         @dev It emits a `PaymentMade` event.
-    */
+     */
     function _makePayment(uint256 total, uint256 principal, uint256 interest, bool paymentLate) internal {
-
-        // Caching to reduce `SLOADs`.
-        uint256 _paymentsRemaining = paymentsRemaining;
-
         // Update internal accounting variables.
-        interestPaid = interestPaid.add(interest);
-        if (principal > uint256(0)) principalPaid = principalPaid.add(principal);
+        interestPaid  = interestPaid.add(interest);
+        principalPaid = principalPaid.add(principal);
 
-        if (_paymentsRemaining > uint256(0)) {
+        if (paymentsRemaining > uint256(0)) {
             // Update info related to next payment and, if needed, decrement principalOwed.
             nextPaymentDue = nextPaymentDue.add(paymentIntervalSeconds);
-            if (principal > uint256(0)) principalOwed = principalOwed.sub(principal);
+            principalOwed  = principalOwed.sub(principal);
         } else {
             // Update info to close loan.
             principalOwed  = uint256(0);
@@ -227,7 +212,9 @@ contract Loan is ILoan, BasicFundsTokenFDT, Pausable {
 
             // Transfer all collateral back to the Borrower.
             ICollateralLockerLike(collateralLocker).pull(borrower, _getCollateralLockerBalance());
-            _emitBalanceUpdateEventForCollateralLocker();
+
+            _emitBalanceUpdateEvent(collateralLocker, collateralAsset);
+
             emit LoanStateChanged(State.Matured);
         }
 
@@ -241,13 +228,19 @@ contract Loan is ILoan, BasicFundsTokenFDT, Pausable {
             total,
             principal,
             interest,
-            _paymentsRemaining,
+            paymentsRemaining,
             principalOwed,
-            _paymentsRemaining > 0 ? nextPaymentDue : 0,
+            paymentsRemaining > 0 ? nextPaymentDue : 0,
             paymentLate
         );
 
-        _emitBalanceUpdateEventForLoan();
+        _emitBalanceUpdateEvent(address(this), liquidityAsset);
+    }
+
+    function proposeNewTerms(bytes[] calldata calls) external override {
+        _isValidBorrower();
+
+        emit NewTermsProposed(refinanceCommitment = LoanLib.generateRefinanceCommitment(calls), calls);
     }
 
     /************************/
@@ -255,25 +248,30 @@ contract Loan is ILoan, BasicFundsTokenFDT, Pausable {
     /************************/
 
     function fundLoan(address mintTo, uint256 amt) whenNotPaused external override {
-        _whenProtocolNotPaused();
-        _isValidState(State.Ready);
-        _isValidPool();
-        _isWithinFundingPeriod();
-        IERC20(liquidityAsset).safeTransferFrom(msg.sender, fundingLocker, amt);
+        LoanLib.fundLoanChecks(superFactory);
 
-        uint256 wad = _toWad(amt);  // Convert to WAD precision.
-        _mint(mintTo, wad);         // Mint LoanFDTs to `mintTo` (i.e DebtLocker contract).
+        if (loanState == State.Active && refinanceCommitment != bytes32(0)) {
+            _isSoleLender(mintTo);
+        } else {
+            _isValidState(State.Ready);
+            require(block.timestamp <= createdAt.add(fundingPeriod), "L:FUND_PERIOD_EXP");
+        }
+
+        if (amt > uint256(0)) {
+            IERC20(liquidityAsset).safeTransferFrom(msg.sender, fundingLocker, amt);
+            _mint(mintTo, LoanLib.toWad(amt, liquidityAsset));  // Mint WAD precision LoanFDTs to `mintTo` (i.e DebtLocker contract).
+        }
 
         emit LoanFunded(mintTo, amt);
-        _emitBalanceUpdateEventForFundingLocker();
+
+        _emitBalanceUpdateEvent(fundingLocker, liquidityAsset);
     }
 
     function unwind() external override {
-        _whenProtocolNotPaused();
-        _isValidState(State.Ready);
+        LoanLib.unwindChecks(superFactory, uint8(loanState));
 
         // Update accounting for `claim()` and transfer funds from FundingLocker to Loan.
-        excessReturned = LoanLib.unwind(IERC20(liquidityAsset), fundingLocker, createdAt, fundingPeriod);
+        excessReturned = LoanLib.unwind(liquidityAsset, fundingLocker, createdAt, fundingPeriod);
 
         updateFundsReceived();
 
@@ -283,21 +281,18 @@ contract Loan is ILoan, BasicFundsTokenFDT, Pausable {
     }
 
     function triggerDefault() external override {
-        _whenProtocolNotPaused();
-        _isValidState(State.Active);
-        require(LoanLib.canTriggerDefault(nextPaymentDue, defaultGracePeriod, superFactory, balanceOf(msg.sender), totalSupply()), "L:FAILED_TO_LIQ");
+        LoanLib.triggerDefaultChecks(superFactory, uint8(loanState), nextPaymentDue, defaultGracePeriod, balanceOf(msg.sender), totalSupply());
 
         // Pull the Collateral Asset from the CollateralLocker, swap to the Liquidity Asset, and hold custody of the resulting Liquidity Asset in the Loan.
-        (amountLiquidated, amountRecovered) = LoanLib.liquidateCollateral(IERC20(collateralAsset), liquidityAsset, superFactory, collateralLocker);
-        _emitBalanceUpdateEventForCollateralLocker();
+        (amountLiquidated, amountRecovered) = LoanLib.liquidateCollateral(collateralAsset, liquidityAsset, superFactory, collateralLocker);
 
-        // Decrement `principalOwed` by `amountRecovered`, set `defaultSuffered` to the difference (shortfall from the liquidation).
+        _emitBalanceUpdateEvent(collateralLocker, collateralAsset);
+
         if (amountRecovered <= principalOwed) {
-            principalOwed   = principalOwed.sub(amountRecovered);
-            defaultSuffered = principalOwed;
-        }
-        // Set `principalOwed` to zero and return excess value from the liquidation back to the Borrower.
-        else {
+            // Decrement `principalOwed` by `amountRecovered`, set `defaultSuffered` to the difference (shortfall from the liquidation).
+            defaultSuffered = principalOwed = principalOwed.sub(amountRecovered);
+        } else {
+            // Set `principalOwed` to zero and return excess value from the liquidation back to the Borrower.
             liquidationExcess = amountRecovered.sub(principalOwed);
             principalOwed = 0;
             IERC20(liquidityAsset).safeTransfer(borrower, liquidationExcess);  // Send excess to the Borrower.
@@ -307,31 +302,100 @@ contract Loan is ILoan, BasicFundsTokenFDT, Pausable {
         updateFundsReceived();
 
         // Transition `loanState` to `Liquidated`
-        loanState = State.Liquidated;
-
+        emit LoanStateChanged(loanState = State.Liquidated);
         emit Liquidation(amountLiquidated, amountRecovered, liquidationExcess, defaultSuffered);
-        emit LoanStateChanged(State.Liquidated);
+    }
+
+    function acceptNewTerms(bytes[] calldata calls) external override {
+        _isSoleLender(msg.sender);
+
+        LoanLib.refinance(refinanceCommitment, calls);
+
+        emit NewTermsAccepted(refinanceCommitment);
+
+        resetRefinanceCommitment();
+    }
+
+    /*************************/
+    /*** Refinance Setters ***/
+    /*************************/
+
+    function decreasePrincipal(uint256 amount) external {
+        _isSelf();
+
+        IERC20(liquidityAsset).transferFrom(borrower, address(this), amount);
+
+        principalPaid = principalPaid.add(amount);
+        principalOwed = principalOwed.sub(amount);
+    }
+
+    function increasePrincipal(uint256 amount) external {
+        _isSelf();
+
+        require(IERC20(liquidityAsset).balanceOf(fundingLocker) == amount);
+
+        requestAmount = requestAmount.add(amount);
+    }
+
+    function setRepaymentCalc(address calc) external {
+        _isSelf();
+        repaymentCalc = calc;
+    }
+
+    function setLateFeeCalc(address calc) external {
+        _isSelf();
+        lateFeeCalc = calc;
+    }
+
+    function setPremiumCalc(address calc) external {
+        _isSelf();
+        premiumCalc = calc;
+    }
+
+    function setNextPaymentDue(uint256 date) external {
+        _isSelf();
+        nextPaymentDue = date;
+    }
+
+    function setApr(uint256 value) external {
+        _isSelf();
+        apr = value;
+    }
+
+    function setTermDays(uint256 value) external {
+        _isSelf();
+        termDays          = value;
+        paymentsRemaining = value.mul(1 days).div(paymentIntervalSeconds);
+    }
+
+    function setPaymentIntervalDays(uint256 value) external {
+        _isSelf();
+        paymentIntervalSeconds = value.mul(1 days);
+        paymentsRemaining      = termDays.div(value);
+    }
+
+    function setCollateralRatio(uint256 value) external {
+        _isSelf();
+        collateralRatio = value;
+    }
+
+    function setDefaultGracePeriod(uint256 value) external {
+        _isSelf();
+        defaultGracePeriod = value;
     }
 
     /***********************/
-    /*** Admin Functions ***/
+    /*** Pause Functions ***/
     /***********************/
 
     function pause() external override {
-        _isValidBorrowerOrLoanAdmin();
+        _isValidBorrower();
         super._pause();
     }
 
     function unpause() external override {
-        _isValidBorrowerOrLoanAdmin();
-        super._unpause();
-    }
-
-    function setLoanAdmin(address loanAdmin, bool allowed) external override {
-        _whenProtocolNotPaused();
         _isValidBorrower();
-        loanAdmins[loanAdmin] = allowed;
-        emit LoanAdminSet(loanAdmin, allowed);
+        super._unpause();
     }
 
     /**************************/
@@ -339,7 +403,7 @@ contract Loan is ILoan, BasicFundsTokenFDT, Pausable {
     /**************************/
 
     function reclaimERC20(address token) external override {
-        LoanLib.reclaimERC20(token, liquidityAsset, _globals(superFactory));
+        LoanLib.reclaimERC20(token, liquidityAsset, superFactory);
     }
 
     /*********************/
@@ -347,9 +411,10 @@ contract Loan is ILoan, BasicFundsTokenFDT, Pausable {
     /*********************/
 
     function withdrawFunds() public override {
-        _whenProtocolNotPaused();
+        LoanLib.whenProtocolNotPaused(superFactory);
         super.withdrawFunds();
-        emit BalanceUpdated(address(this), fundsToken, IERC20(fundsToken).balanceOf(address(this)));
+
+        _emitBalanceUpdateEvent(address(this), fundsToken);
     }
 
     /************************/
@@ -357,8 +422,7 @@ contract Loan is ILoan, BasicFundsTokenFDT, Pausable {
     /************************/
 
     function getExpectedAmountRecovered() external override view returns (uint256) {
-        uint256 liquidationAmt = _getCollateralLockerBalance();
-        return Util.calcMinAmount(IMapleGlobals(address(_globals(superFactory))), collateralAsset, liquidityAsset, liquidationAmt);
+        return Util.calcMinAmount(IMapleGlobals(address(LoanLib.getGlobals(superFactory))), collateralAsset, liquidityAsset, _getCollateralLockerBalance());
     }
 
     function getNextPayment() public override view returns (uint256, uint256, uint256, uint256, bool) {
@@ -370,46 +434,12 @@ contract Loan is ILoan, BasicFundsTokenFDT, Pausable {
     }
 
     function collateralRequiredForDrawdown(uint256 amt) public override view returns (uint256) {
-        return LoanLib.collateralRequiredForDrawdown(
-            IERC20DetailsLike(collateralAsset),
-            IERC20DetailsLike(liquidityAsset),
-            collateralRatio,
-            superFactory,
-            amt
-        );
+        return LoanLib.collateralRequiredForDrawdown(collateralAsset, liquidityAsset, collateralRatio, LoanLib.getGlobals(superFactory), amt);
     }
 
     /************************/
     /*** Helper Functions ***/
     /************************/
-
-    /**
-        @dev Checks that the protocol is not in a paused state.
-     */
-    function _whenProtocolNotPaused() internal view {
-        require(!_globals(superFactory).protocolPaused(), "L:PROTO_PAUSED");
-    }
-
-    /**
-        @dev Checks that `msg.sender` is the Borrower or a Loan Admin.
-     */
-    function _isValidBorrowerOrLoanAdmin() internal view {
-        require(msg.sender == borrower || loanAdmins[msg.sender], "L:NOT_BORROWER_OR_ADMIN");
-    }
-
-    /**
-        @dev Converts to WAD precision.
-     */
-    function _toWad(uint256 amt) internal view returns (uint256) {
-        return amt.mul(10 ** 18).div(10 ** IERC20DetailsLike(liquidityAsset).decimals());
-    }
-
-    /**
-        @dev Returns the MapleGlobals instance.
-     */
-    function _globals(address loanFactory) internal view returns (IMapleGlobalsLike) {
-        return IMapleGlobalsLike(ILoanFactory(loanFactory).globals());
-    }
 
     /**
         @dev Returns the CollateralLocker balance.
@@ -419,79 +449,37 @@ contract Loan is ILoan, BasicFundsTokenFDT, Pausable {
     }
 
     /**
-        @dev Returns the FundingLocker balance.
-     */
-    function _getFundingLockerBalance() internal view returns (uint256) {
-        return IERC20(liquidityAsset).balanceOf(fundingLocker);
-    }
-
-    /**
         @dev   Checks that the current state of the Loan matches the provided state.
         @param _state Enum of desired Loan state.
      */
     function _isValidState(State _state) internal view {
-        require(loanState == _state, "L:INVALID_STATE");
+        require(loanState == _state, "L:INV_STATE");
     }
 
     /**
         @dev Checks that `msg.sender` is the Borrower.
      */
     function _isValidBorrower() internal view {
-        require(msg.sender == borrower, "L:NOT_BORROWER");
+        require(msg.sender == borrower, "L:INV_BORROWER");
     }
 
     /**
-        @dev Checks that `msg.sender` is a Lender (LiquidityLocker) that is using an approved Pool to fund the Loan.
+        @dev Emits a `BalanceUpdated` event for an account and token.
      */
-    function _isValidPool() internal view {
-        address pool        = ILiquidityLockerLike(msg.sender).pool();
-        address poolFactory = IPoolLike(pool).superFactory();
-        require(
-            _globals(superFactory).isValidPoolFactory(poolFactory) &&
-            IPoolFactoryLike(poolFactory).isPool(pool),
-            "L:INVALID_LENDER"
-        );
+    function _emitBalanceUpdateEvent(address account, address token) internal {
+        emit BalanceUpdated(account, token, IERC20(token).balanceOf(account));
     }
 
-    /**
-        @dev Checks that "now" is currently within the funding period.
-     */
-    function _isWithinFundingPeriod() internal view {
-        require(block.timestamp <= createdAt.add(fundingPeriod), "L:PAST_FUNDING_PERIOD");
+    function _isSoleLender(address account) internal view {
+        require(balanceOf(account) > totalSupply(), "L:NOT_LENDER");
     }
 
-    /**
-        @dev   Transfers funds from the FundingLocker.
-        @param from  Instance of the FundingLocker.
-        @param to    Address to send funds to.
-        @param value Amount to send.
-     */
-    function _transferFunds(IFundingLockerLike from, address to, uint256 value) internal {
-        from.pull(to, value);
+    function _isSelf() internal view {
+        require(msg.sender == address(this), "L:NOT_SELF");
     }
 
-    /**
-        @dev Emits a `BalanceUpdated` event for the Loan.
-        @dev It emits a `BalanceUpdated` event.
-     */
-    function _emitBalanceUpdateEventForLoan() internal {
-        emit BalanceUpdated(address(this), liquidityAsset, IERC20(liquidityAsset).balanceOf(address(this)));
-    }
-
-    /**
-        @dev Emits a `BalanceUpdated` event for the FundingLocker.
-        @dev It emits a `BalanceUpdated` event.
-     */
-    function _emitBalanceUpdateEventForFundingLocker() internal {
-        emit BalanceUpdated(fundingLocker, liquidityAsset, _getFundingLockerBalance());
-    }
-
-    /**
-        @dev Emits a `BalanceUpdated` event for the CollateralLocker.
-        @dev It emits a `BalanceUpdated` event.
-     */
-    function _emitBalanceUpdateEventForCollateralLocker() internal {
-        emit BalanceUpdated(collateralLocker, collateralAsset, _getCollateralLockerBalance());
+    function resetRefinanceCommitment() internal {
+        refinanceCommitment = LoanLib.getEmptyRefinanceCommitment();
     }
 
     function _msgSender() internal view override(PauseableContext, ERC20Context) returns (address payable) {
@@ -499,7 +487,6 @@ contract Loan is ILoan, BasicFundsTokenFDT, Pausable {
     }
 
     function _msgData() internal view override(PauseableContext, ERC20Context) returns (bytes memory) {
-        this; // silence state mutability warning without generating bytecode - see https://github.com/ethereum/solidity/issues/2691
         return msg.data;
     }
 
