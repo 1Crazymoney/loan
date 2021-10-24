@@ -330,4 +330,26 @@ interface ILoan {
 
     function acceptNewTerms(bytes[] calldata calls) external;
 
+    function decreasePrincipal(uint256 amount) external;
+
+    function increasePrincipal(uint256 amount) external;
+
+    function setRepaymentCalc(address calc) external;
+
+    function setLateFeeCalc(address calc) external;
+
+    function setPremiumCalc(address calc) external;
+
+    function setNextPaymentDue(uint256 date) external;
+
+    function setApr(uint256 value) external;
+
+    function setTermDays(uint256 value) external;
+
+    function setPaymentIntervalDays(uint256 value) external;
+
+    function setCollateralRatio(uint256 value) external;
+
+    function setDefaultGracePeriod(uint256 value) external;
+
 }

@@ -307,7 +307,7 @@ contract Loan is ILoan, BasicFundsTokenFDT, Pausable {
     /*** Refinance Setters ***/
     /*************************/
 
-    function decreasePrincipal(uint256 amount) external {
+    function decreasePrincipal(uint256 amount) external override {
         _isSelf();
 
         IERC20(liquidityAsset).transferFrom(borrower, address(this), amount);
@@ -316,7 +316,7 @@ contract Loan is ILoan, BasicFundsTokenFDT, Pausable {
         principalOwed = principalOwed.sub(amount);
     }
 
-    function increasePrincipal(uint256 amount) external {
+    function increasePrincipal(uint256 amount) external override {
         _isSelf();
 
         require(IERC20(liquidityAsset).balanceOf(fundingLocker) == amount);
@@ -324,49 +324,49 @@ contract Loan is ILoan, BasicFundsTokenFDT, Pausable {
         requestAmount = requestAmount.add(amount);
     }
 
-    function setRepaymentCalc(address calc) external {
+    function setRepaymentCalc(address calc) external override {
         _isSelf();
         repaymentCalc = calc;
     }
 
-    function setLateFeeCalc(address calc) external {
+    function setLateFeeCalc(address calc) external override {
         _isSelf();
         lateFeeCalc = calc;
     }
 
-    function setPremiumCalc(address calc) external {
+    function setPremiumCalc(address calc) external override {
         _isSelf();
         premiumCalc = calc;
     }
 
-    function setNextPaymentDue(uint256 date) external {
+    function setNextPaymentDue(uint256 date) external override {
         _isSelf();
         nextPaymentDue = date;
     }
 
-    function setApr(uint256 value) external {
+    function setApr(uint256 value) external override {
         _isSelf();
         apr = value;
     }
 
-    function setTermDays(uint256 value) external {
+    function setTermDays(uint256 value) external override {
         _isSelf();
         termDays          = value;
         paymentsRemaining = value.mul(1 days).div(paymentIntervalSeconds);
     }
 
-    function setPaymentIntervalDays(uint256 value) external {
+    function setPaymentIntervalDays(uint256 value) external override {
         _isSelf();
         paymentIntervalSeconds = value.mul(1 days);
         paymentsRemaining      = termDays.div(value);
     }
 
-    function setCollateralRatio(uint256 value) external {
+    function setCollateralRatio(uint256 value) external override {
         _isSelf();
         collateralRatio = value;
     }
 
-    function setDefaultGracePeriod(uint256 value) external {
+    function setDefaultGracePeriod(uint256 value) external override {
         _isSelf();
         defaultGracePeriod = value;
     }
